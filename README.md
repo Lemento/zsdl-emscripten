@@ -58,11 +58,8 @@ Remember, you need to install and activate emscripten in every new shell session
 
 Pretty much everything here was copied from [zig-examples](https://github.com/castholm/zig-examples)
 
-
-
 First got my start learning from [silbinarywolf](https://github.com/silbinarywolf/sdl-zig-demo-emscripten)'s repository
-
-
 
 [zemscripten](https://github.com/zig-gamedev/zemscripten) provides a clean example for using emscripten
 
+[sdl3/README-emscripten](https://wiki.libsdl.org/SDL3/README-emscripten) Shows and explains how to structure your app so that it can be compiled to wasm.
