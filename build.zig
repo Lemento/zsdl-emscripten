@@ -7,6 +7,7 @@ const SOURCES =struct
 {
     pub const demosdl= @import("src/demosdl.zig");
     pub const demogl= @import("src/demogl.zig");
+    pub const hello_triangle= @import("src/hello_triangle.zig");
 };
 
 pub fn build(b: *std.Build) void
@@ -49,8 +50,8 @@ pub fn build(b: *std.Build) void
     };
 
     // loops through SOURCES struct so that any source can be built and run with zig build run-SRC_NAME
-    // TODO: Make it so the sources are only built when specified, instead of being built all at once.
-    inline for(comptime std.meta.declarations(SOURCES)) |src|
+    // Sources are only built if specified or run
+    inline for(@typeInfo(SOURCES).@"struct".decls) |src|
     { buildApp(b, src.name, options); }
 }
 
@@ -61,7 +62,7 @@ fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
     const app_mod = b.createModule(.{
         .target = opt.target,
         .optimize = opt.optimize,
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path(src_path),
         .link_libc = true,
     });
 
@@ -73,22 +74,12 @@ fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
         app_mod.addSystemIncludePath(path);
     }
 
-    // No matter the exe name, it will be imported to main as a 'impl' module as it implements the app functions that main defines.
-    const impl_mod = b.createModule(.{
-        .root_source_file = b.path(src_path),
-        .target=opt.target, .optimize=opt.optimize,
-        .link_libc=true,
-    });
-
     const os_tag = opt.target.result.os.tag;
     if(os_tag != .emscripten and os_tag != .wasi)
     {
         app_mod.addIncludePath(b.path("glad/include"));
         app_mod.addCSourceFile(.{ .file=b.path("glad/src/glad.c"), .flags=&.{ "-fno-sanitize=undefined" }});
     }
-
-    impl_mod.addImport("main", app_mod);
-    app_mod.addImport("impl", impl_mod);
 
     const sdl_dep = b.dependency("sdl", .{
         .target = opt.target,
@@ -98,7 +89,8 @@ fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
     const sdl_lib = sdl_dep.artifact("SDL3");
     app_mod.linkLibrary(sdl_lib);
 
-    const run = b.step("run-"++exe_name, "Run '"++exe_name++"' program");
+    const run_name= "run-"++exe_name;
+    const run_step = b.step(run_name, "Run '"++exe_name++"' program");
 
     if (opt.target.result.os.tag == .emscripten) {
         // Build for the Web.
@@ -188,20 +180,21 @@ fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
         run_emcc.addArg("-o");
         const app_html = run_emcc.addOutputFileArg(exe_name++".html");
 
-        b.getInstallStep().dependOn(&b.addInstallDirectory(.{
+        const install_www= &b.addInstallDirectory(.{
             .source_dir = app_html.dirname(),
             .install_dir = .{ .custom = "www" },
             .install_subdir = "",
-        }).step);
+        }).step;
+        // b.getInstallStep().dependOn(link_step);
+        b.step(exe_name, "Build '"++exe_name++"' for desktop").dependOn(install_www);
 
         const run_emrun = b.addSystemCommand(&.{"emrun"});
         run_emrun.addArg(b.pathJoin(&.{ b.install_path, "www", exe_name++".html",  }));
-        
         run_emrun.addArg("--browser="++requested_browser);
         // if (b.args) |args| run_emrun.addArgs(args);
-        run_emrun.step.dependOn(b.getInstallStep());
+        run_emrun.step.dependOn(install_www);
 
-        run.dependOn(&run_emrun.step);
+        run_step.dependOn(&run_emrun.step);
 
     } else {
         // Build for desktop.
@@ -212,11 +205,16 @@ fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
         app_exe.lto = opt.lto;
         b.installArtifact(app_exe);
 
+        const install_exe= b.addInstallArtifact(app_exe, .{});
+        // b.getInstallStep().dependOn(&install_exe.step);
+        b.step(exe_name, "Build '"++exe_name++"' for desktop").dependOn(&install_exe.step);
+        // build_all_cmd.dependOn (&install_exe.step);
+
         const run_app = b.addRunArtifact(app_exe);
         if (b.args) |args| run_app.addArgs(args);
-        run_app.step.dependOn(b.getInstallStep());
+        run_app.step.dependOn(&install_exe.step);
 
-        run.dependOn(&run_app.step);
+        run_step.dependOn(&run_app.step);
     }
 }
 
@@ -229,6 +227,5 @@ inline fn emsdkPath(b: *std.Build) []const u8 {
     // &.{ "emsdk" })
     // catch unreachable;
 
-    // return "C:\\Users\\Dagai\\Desktop\\zig-examples\\demo\\emsdk\\upstream\\emscripten\\cache";
     return b.run(&.{ "em-config", "CACHE" });
 }

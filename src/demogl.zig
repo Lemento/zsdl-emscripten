@@ -1,18 +1,45 @@
 const std = @import("std");
-const sdl = @import("main").sdl;
-const gl = @import("main").gl;
-const APP = @import("main").PLATFORM;
+
+const APP = @import("app.zig").PLATFORM;
+const sdl = @import("app.zig").sdl;
+const gl = @import("app.zig").gl;
+const em = @import("app.zig").em;
 
 /// Make an example demo that opens a window with the Zig Logo
 /// Uses SDL3 and OpenGL
 
-pub const FN_IMPL= @import("main").AppStruct
+var quit = false;
+pub fn main() void
 {
-    .init= sdlAppInit,
-    .quit= sdlAppQuit,
-    .event= sdlAppEvent,
-    .iterate= sdlAppIterate,
-};
+    impl.appInit() catch return;
+
+    if(APP==.WEB)
+    { em.set_main_loop(mainLoop, 0, true); }
+    else
+    { while(true){ mainLoop(); } }
+}
+
+fn mainLoop() callconv(.c) void
+{
+    if(quit)
+    {
+        impl.appQuit();
+        
+        if(APP==.WEB)
+        { em.cancel_main_loop(); }
+        else { std.process.exit(0); }
+    }
+
+    var event: sdl.SDL_Event= undefined;
+    while(sdl.SDL_PollEvent(&event))
+    {
+        impl.appEvent(&event) catch {quit=true;};
+    }
+    
+    _=impl.appIterate();
+}
+
+const impl= struct{
 
 var screen: *sdl.SDL_Window= undefined;
 var gl_context: sdl.SDL_GLContext= undefined;
@@ -21,7 +48,7 @@ var shader_program: u32 = undefined;
 var vertex_array_object: u32 = undefined;
 var texture_id: u32 = undefined;
 
-fn sdlAppInit(_: ?*?*anyopaque, _: [][*:0]u8) !sdl.SDL_AppResult
+fn appInit() !void
 {
     // Initialize SDL systems
     if(sdl.SDL_Init(sdl.SDL_INIT_VIDEO) == false)
@@ -77,7 +104,7 @@ fn sdlAppInit(_: ?*?*anyopaque, _: [][*:0]u8) !sdl.SDL_AppResult
         \\void main(){ fragColor = texture(diffuse, vTexCoord); }
     };
 
-    shader_program = try loadShader(&vertex_shader_source, &fragment_shader_source);
+    shader_program = try loadShaderFromSource(&vertex_shader_source, &fragment_shader_source);
     errdefer gl.glDeleteProgram(shader_program);
 
     // triangle vertices
@@ -129,32 +156,30 @@ fn sdlAppInit(_: ?*?*anyopaque, _: [][*:0]u8) !sdl.SDL_AppResult
     errdefer gl.glDeleteTextures(1, &texture_id);
 
     _=sdl.SDL_ShowWindow(screen);
-    return sdl.SDL_APP_CONTINUE;
 }
 
 
-fn sdlAppQuit(_: ?*anyopaque, result: anyerror!sdl.SDL_AppResult) void
+fn appQuit() void
 {
     std.log.debug("Cleaning Up!", .{});
 
-    _=result catch |err|
-    {
-        if(err == error.SDL)
-        { sdl.SDL_Log("SDL: %s\n", sdl.SDL_GetError()); }
-        else
-            std.log.err("{s}", .{@errorName(err)});
+    // {
+    //     if(err == error.SDL)
+    //     { sdl.SDL_Log("SDL: %s\n", sdl.SDL_GetError()); }
+    //     else
+    //         std.log.err("{s}", .{@errorName(err)});
         
-        // Return early on error since the following expects a full initialization.
-        // If an error is thrown during initialization, cleanup would have already been executed by errdefer guards.
-        return;
-    };
+    //     // Return early on error since the following expects a full initialization.
+    //     // If an error is thrown during initialization, cleanup would have already been executed by errdefer guards.
+    //     return;
+    // };
 
     sdl.SDL_DestroySurface(img_surface);
     sdl.SDL_DestroyWindow(screen);
     sdl.SDL_Quit();
 }
 
-fn sdlAppIterate(_: ?*anyopaque) !sdl.SDL_AppResult
+fn appIterate() void
 {
     gl.glClear(gl.GL_COLOR_BUFFER_BIT);
     gl.glUseProgram(shader_program);
@@ -164,25 +189,22 @@ fn sdlAppIterate(_: ?*anyopaque) !sdl.SDL_AppResult
     gl.glBindVertexArray(vertex_array_object);
     gl.glDrawArrays(gl.GL_TRIANGLES, 0, 6);
     _=sdl.SDL_GL_SwapWindow(screen);
-
-    return sdl.SDL_APP_CONTINUE;
 }
 
-fn sdlAppEvent(_: ?*anyopaque, event: *sdl.SDL_Event) anyerror!sdl.SDL_AppResult
+fn appEvent(event: *sdl.SDL_Event) !void
 {
     switch(event.type)
     {
-        sdl.SDL_EVENT_QUIT=> return sdl.SDL_APP_SUCCESS,
+        sdl.SDL_EVENT_QUIT=> return error.RuntimeRequestedQuit,
         sdl.SDL_EVENT_KEY_DOWN=>
         {
             if(event.key.key == sdl.SDLK_ESCAPE)
-            { return sdl.SDL_APP_SUCCESS; }
+            { return error.RuntimeRequestedQuit; }
         },
         else=>{},
     }
-
-    return sdl.SDL_APP_CONTINUE;
 }
+};
 
 
 fn createTextureFromSDLSurface(original_surface: *sdl.SDL_Surface) gl.GLuint
@@ -221,14 +243,14 @@ fn SDL_CreateRGBSurface (width:i32, height:i32, depth:i32, Rmask:u32, Gmask:u32,
 }
 
 
-pub fn loadShader(vertex_shader_source: []const [*:0]const u8, fragment_shader_source: []const [*:0]const u8) !u32 {
+pub fn loadShaderFromSource(vertex_shader_source: []const [*:0]const u8, fragment_shader_source: []const [*:0]const u8) !u32 {
     const vertex_shader = try compileShader(vertex_shader_source, gl.GL_VERTEX_SHADER);
     defer gl.glDeleteShader(vertex_shader);
 
     const fragment_shader: u32 = try compileShader(fragment_shader_source, gl.GL_FRAGMENT_SHADER);
     defer gl.glDeleteShader(fragment_shader);
 
-    shader_program = gl.glCreateProgram();
+    const shader_program = gl.glCreateProgram();
     errdefer gl.glDeleteProgram(shader_program);
     gl.glAttachShader(shader_program, vertex_shader);
     gl.glAttachShader(shader_program, fragment_shader);

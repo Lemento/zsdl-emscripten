@@ -1,17 +1,43 @@
 const std = @import("std");
-const sdl = @import("main").sdl;
-const APP = @import("main").PLATFORM;
+
+const APP = @import("app.zig").PLATFORM;
+const sdl = @import("app.zig").sdl;
+const gl = @import("app.zig").gl;
+const em = @import("app.zig").em;
 
 /// Make an example demo that opens a window with the Zig Logo
 /// Uses pure SDL3
 
-pub const FN_IMPL= @import("main").AppStruct
+var quit = false;
+pub fn main() void
 {
-    .init= sdlAppInit,
-    .quit= sdlAppQuit,
-    .event= sdlAppEvent,
-    .iterate= sdlAppIterate,
-};
+    appInit() catch return;
+
+    if(APP==.WEB)
+    { em.set_main_loop(mainLoop, 0, true); }
+    else
+    { while(true){ mainLoop(); } }
+}
+
+fn mainLoop() callconv(.c) void
+{
+    if(quit)
+    {
+        appQuit();
+        
+        if(APP==.WEB)
+        { em.cancel_main_loop(); }
+        else { std.process.exit(0); }
+    }
+
+    var event: sdl.SDL_Event= undefined;
+    while(sdl.SDL_PollEvent(&event))
+    {
+        appEvent(&event) catch {quit=true;};
+    }
+    
+    appIterate();
+}
 
 var screen: *sdl.SDL_Window= undefined;
 var renderer: *sdl.SDL_Renderer= undefined;
@@ -23,7 +49,7 @@ pub const os = if (@import("builtin").os.tag != .emscripten and @import("builtin
         pub const page_allocator = std.heap.c_allocator;
     };
 };
-fn sdlAppInit(_: ?*?*anyopaque, _: [][*:0]u8) !sdl.SDL_AppResult
+fn appInit() !void
 {
     const mem = std.heap.c_allocator;
     // set current working directory
@@ -98,24 +124,23 @@ fn sdlAppInit(_: ?*?*anyopaque, _: [][*:0]u8) !sdl.SDL_AppResult
     errdefer sdl.SDL_DestroyTexture(img_texture);
 
     _=sdl.SDL_ShowWindow(screen);
-    return sdl.SDL_APP_CONTINUE;
 }
 
-fn sdlAppQuit(_: ?*anyopaque, result: anyerror!sdl.SDL_AppResult) void
+fn appQuit() void
 {
     std.log.debug("Cleaning Up!", .{});
 
-    _=result catch |err|
-    {
-        if(err == error.SDL)
-        { sdl.SDL_Log("SDL: %s\n", sdl.SDL_GetError()); }
-        else
-            std.log.err("{s}", .{@errorName(err)});
+    // _=result catch |err|
+    // {
+    //     if(err == error.SDL)
+    //     { sdl.SDL_Log("SDL: %s\n", sdl.SDL_GetError()); }
+    //     else
+    //         std.log.err("{s}", .{@errorName(err)});
         
-        // Return early on error since the following expects a full initialization.
-        // If an error is thrown during initialization, cleanup would have already been executed by errdefer guards.
-        return;
-    };
+    //     // Return early on error since the following expects a full initialization.
+    //     // If an error is thrown during initialization, cleanup would have already been executed by errdefer guards.
+    //     return;
+    // };
 
     sdl.SDL_DestroyTexture(img_texture);
     sdl.SDL_DestroySurface(img_surface);
@@ -124,27 +149,23 @@ fn sdlAppQuit(_: ?*anyopaque, result: anyerror!sdl.SDL_AppResult) void
     sdl.SDL_Quit();
 }
 
-fn sdlAppIterate(_: ?*anyopaque) !sdl.SDL_AppResult
+fn appIterate() void
 {
     _=sdl.SDL_RenderClear(renderer);
     _=sdl.SDL_RenderTexture(renderer, img_texture, null, null);
     _=sdl.SDL_RenderPresent(renderer);
-
-    return sdl.SDL_APP_CONTINUE;
 }
 
-fn sdlAppEvent(_: ?*anyopaque, event: *sdl.SDL_Event) anyerror!sdl.SDL_AppResult
+fn appEvent(event: *sdl.SDL_Event) !void
 {
     switch(event.type)
     {
-        sdl.SDL_EVENT_QUIT=> return sdl.SDL_APP_SUCCESS,
+        sdl.SDL_EVENT_QUIT=> return error.RuntimeRequestedQuit,
         sdl.SDL_EVENT_KEY_DOWN=>
         {
             if(event.key.key == sdl.SDLK_ESCAPE)
-            { return sdl.SDL_APP_SUCCESS; }
+            { return error.RuntimeRequestedQuit; }
         },
         else=>{},
     }
-
-    return sdl.SDL_APP_CONTINUE;
 }
