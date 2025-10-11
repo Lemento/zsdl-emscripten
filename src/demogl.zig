@@ -3,6 +3,9 @@ const sdl = @import("main").sdl;
 const gl = @import("main").gl;
 const APP = @import("main").PLATFORM;
 
+/// Make an example demo that opens a window with the Zig Logo
+/// Uses SDL3 and OpenGL
+
 pub const FN_IMPL= @import("main").AppStruct
 {
     .init= sdlAppInit,

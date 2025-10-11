@@ -1,10 +1,11 @@
 const std = @import("std");
 
+// Set this to whatever browser you want to use
 const requested_browser = "chrome";
 
 const SOURCES =struct
 {
-    pub const demo= @import("src/demo.zig");
+    pub const demosdl= @import("src/demosdl.zig");
     pub const demogl= @import("src/demogl.zig");
 };
 
@@ -47,8 +48,10 @@ pub fn build(b: *std.Build) void
         .lto=lto
     };
 
-    buildApp(b, "demo", options);
-    buildApp(b, "demogl", options);
+    // loops through SOURCES struct so that any source can be built and run with zig build run-SRC_NAME
+    // TODO: Make it so the sources are only built when specified, instead of being built all at once.
+    inline for(comptime std.meta.declarations(SOURCES)) |src|
+    { buildApp(b, src.name, options); }
 }
 
 fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
@@ -148,19 +151,25 @@ fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
             run_emcc.addArg("-flto");
             // Minify JavaScript code.
             run_emcc.addArgs(&.{ "--closure", "1" });
+            run_emcc.addArg("-sSTACK_OVERFLOW_CHECK=0");
+            run_emcc.addArg("-sMALLOC='emmalloc'");
+        } else {
+            run_emcc.addArg("-sSTACK_OVERFLOW_CHECK=2");
+            run_emcc.addArg("-sMALLOC='emmalloc-memvalidate'");
+            run_emcc.addArg("-sSAFE_HEAP=1");
         }
 
         run_emcc.addArg("-sMIN_WEBGL_VERSION=2");
         run_emcc.addArg("-sMAX_WEBGL_VERSION=2");
 
         // run_emcc.addArg("-sNO_FILESYSTEM=1");
-        run_emcc.addArg("-sMALLOC='emmalloc'");
 
         run_emcc.addArg("-sGL_ENABLE_GET_PROC_ADDRESS=1");
-        run_emcc.addArg("-sINITIAL_MEMORY=64Mb");
-        run_emcc.addArg("-sSTACK_SIZE=16Mb");
+        run_emcc.addArg("-sINITIAL_HEAP=64Mb");
+        run_emcc.addArg("-sALLOW_MEMORY_GROWTH=0");
+        run_emcc.addArg("-sSTACK_SIZE=32Kb");
 
-        // run_emcc.addArg("-sFULL-ES3=1");
+        run_emcc.addArg("-sFULL-ES3=1");
         // run_emcc.addArg("-sUSE_GLFW=3");
         // run_emcc.addArg("-sASYNCIFY");
         // run_emcc.addArg("-sEXIT_RUNTIME");

@@ -2,6 +2,9 @@ const std = @import("std");
 const sdl = @import("main").sdl;
 const APP = @import("main").PLATFORM;
 
+/// Make an example demo that opens a window with the Zig Logo
+/// Uses pure SDL3
+
 pub const FN_IMPL= @import("main").AppStruct
 {
     .init= sdlAppInit,

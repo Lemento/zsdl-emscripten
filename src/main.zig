@@ -1,6 +1,10 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+// This file contains the main function and the structure for the sdl app that needs to be used to create an app.
+// Those app functions are expected to be implemented in a seperate file and have this imported there.
+// The implementation file must assign everything in there own AppStruct declaration that must be named 'FN_IMPL' so that this file can import and call them here.
+
 pub const PLATFORM = if(builtin.os.tag == .emscripten or builtin.os.tag == .wasi) .WEB else .NATIVE;
 
 pub const sdl = @cImport
@@ -11,6 +15,10 @@ pub const sdl = @cImport
     @cInclude("SDL3/SDL_main.h");
     @cInclude("SDL3/SDL_opengl.h");
 });
+
+// We include the glad opengl header files here and import them into the implementation files.
+// Even though this file doesn't need them to build, it is linked with the wasm-emscripten library so it has access to the GLES3/egl.h header.
+// Idk its just easier this way mannnnnnn.
 pub const gl = @cImport
 ({
     if(PLATFORM==.NATIVE)
@@ -18,9 +26,9 @@ pub const gl = @cImport
     else
     {
         @cInclude("GLES3/gl3.h");
-        @cInclude("EGL/egl.h");
-        @cInclude("EGL/eglext.h");
-        @cInclude("emscripten.h");
+        // @cInclude("EGL/egl.h");
+        // @cInclude("EGL/eglext.h");
+        // @cInclude("emscripten.h");
     }
 });
 const c = @cImport(
