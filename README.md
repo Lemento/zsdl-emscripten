@@ -3,7 +3,7 @@
 To run the normal demo run:
 
 ```
-zig build run-demo
+zig build run-demosdl
 ```
 
 
@@ -20,7 +20,6 @@ Install and activate it:
 
 ```
 ./emsdk/emsdk install latest
-
 ./emsdk/emsdk activate latest
 ```
 
@@ -29,7 +28,7 @@ Install and activate it:
 Then you can start compiling like so:
 
 ```
-zig build run-demo -Dtarget=wasm32-emscripten
+zig build run-demosdl -Dtarget=wasm32-emscripten
 ```
 
 
@@ -40,15 +39,23 @@ Remember, you need to install and activate emscripten in every new shell session
 
 ## TODO
 
-⦁	Fetch emscripten as a dependency and run it from build like in zemscripten so I dont have to run clone the repo and install everytime.
+-	Fetch emscripten as a dependency and run it from build like in zemscripten so I dont have to run clone the repo and install everytime.
 
+-	~~Create more samples for 3D graphics and move all of them to their own directory.~~
 
+-   Continue through LearnOpenGL tutorial for examples
 
-⦁	Create more samples for 3D graphics and move all of them to their own directory.
+-       ~~Hello Triangle~~
 
+-       ~~Transforms~~
 
+-       Textures
 
+-       Camera
 
+-       Lighting
+
+-       Model Loading
 
 
 
