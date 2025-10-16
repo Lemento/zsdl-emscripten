@@ -39,23 +39,23 @@ Remember, you need to install and activate emscripten in every new shell session
 
 ## TODO
 
--	Fetch emscripten as a dependency and run it from build like in zemscripten so I dont have to run clone the repo and install everytime.
+*	Fetch emscripten as a dependency and run it from build like in zemscripten so I dont have to run clone the repo and install everytime.
 
--	~~Create more samples for 3D graphics and move all of them to their own directory.~~
+*	~~Create more samples for 3D graphics and move all of them to their own directory.~~
 
--   Continue through LearnOpenGL tutorial for examples
+*   Continue through LearnOpenGL tutorial for examples
 
--       ~~Hello Triangle~~
+    * ~~Hello Triangle~~
 
--       ~~Transforms~~
+    * ~~Transforms~~
 
--       Textures
+    * Textures
 
--       Camera
+    * Camera
 
--       Lighting
+    * Lighting
 
--       Model Loading
+    * Model Loading
 
 
 
