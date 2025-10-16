@@ -1,9 +1,37 @@
 const std = @import("std");
 
-const APP = @import("app.zig").PLATFORM;
-const sdl = @import("app.zig").sdl;
-const gl = @import("app.zig").gl;
-const em = @import("app.zig").em;
+const builtin = @import("builtin");
+pub const PLATFORM =
+    if(builtin.os.tag == .emscripten or builtin.os.tag == .wasi)
+        .WEB else .NATIVE;
+
+pub const sdl = @cImport
+({
+    @cInclude("SDL3/SDL.h");
+    @cInclude("SDL3/SDL_revision.h");
+    @cDefine("SDL_MAIN_HANDLED", {});
+    @cInclude("SDL3/SDL_main.h");
+    @cInclude("SDL3/SDL_opengl.h");
+});
+
+// const gl = @import("main").gl;
+pub const gl = @cImport
+({
+    if(PLATFORM==.NATIVE)
+        @cInclude("glad/glad.h")
+    else
+    {
+        @cInclude("GLES3/gl3.h");
+        // @cInclude("EGL/egl.h");
+        // @cInclude("EGL/eglext.h");
+    }
+});
+pub const emscripten= struct{
+    pub const c= @cImport(if(PLATFORM==.WEB){ @cInclude("emscripten.h"); });
+
+    pub const set_main_loop= c.emscripten_set_main_loop;
+    pub const cancel_main_loop= c.emscripten_cancel_main_loop;
+};
 
 /// Make an example demo that opens a window with the Zig Logo
 /// Uses SDL3 and OpenGL
@@ -13,8 +41,8 @@ pub fn main() void
 {
     impl.appInit() catch return;
 
-    if(APP==.WEB)
-    { em.set_main_loop(mainLoop, 0, true); }
+    if(PLATFORM==.WEB)
+    { emscripten.set_main_loop(mainLoop, 0, true); }
     else
     { while(true){ mainLoop(); } }
 }
@@ -25,8 +53,8 @@ fn mainLoop() callconv(.c) void
     {
         impl.appQuit();
         
-        if(APP==.WEB)
-        { em.cancel_main_loop(); }
+        if(PLATFORM==.WEB)
+        { emscripten.cancel_main_loop(); }
         else { std.process.exit(0); }
     }
 
@@ -71,7 +99,7 @@ fn appInit() !void
     orelse return error.SDL;
     errdefer{ _=sdl.SDL_GL_DestroyContext(gl_context); }
 
-    if(APP==.NATIVE){ _=gl.gladLoadGLLoader(@ptrCast(&sdl.SDL_GL_GetProcAddress)); }
+    if(PLATFORM==.NATIVE){ _=gl.gladLoadGLLoader(@ptrCast(&sdl.SDL_GL_GetProcAddress)); }
 
     gl.glClearColor(1.0, 1.0, 1.0, 1.0);
     _ = sdl.SDL_GL_SetAttribute(sdl.SDL_GL_CONTEXT_PROFILE_MASK, sdl.SDL_GL_CONTEXT_PROFILE_ES);
@@ -243,7 +271,7 @@ fn SDL_CreateRGBSurface (width:i32, height:i32, depth:i32, Rmask:u32, Gmask:u32,
 }
 
 
-pub fn loadShaderFromSource(vertex_shader_source: []const [*:0]const u8, fragment_shader_source: []const [*:0]const u8) !u32 {
+fn loadShaderFromSource(vertex_shader_source: []const [*:0]const u8, fragment_shader_source: []const [*:0]const u8) !u32 {
     const vertex_shader = try compileShader(vertex_shader_source, gl.GL_VERTEX_SHADER);
     defer gl.glDeleteShader(vertex_shader);
 
@@ -296,4 +324,3 @@ fn compileShader(shader_source: []const [*:0]const u8, shaderType: u32) !u32 {
 
     return program;
 }
-

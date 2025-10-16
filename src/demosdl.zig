@@ -1,9 +1,37 @@
 const std = @import("std");
 
-const APP = @import("app.zig").PLATFORM;
-const sdl = @import("app.zig").sdl;
-const gl = @import("app.zig").gl;
-const em = @import("app.zig").em;
+const builtin = @import("builtin");
+pub const PLATFORM =
+    if(builtin.os.tag == .emscripten or builtin.os.tag == .wasi)
+        .WEB else .NATIVE;
+
+pub const sdl = @cImport
+({
+    @cInclude("SDL3/SDL.h");
+    @cInclude("SDL3/SDL_revision.h");
+    @cDefine("SDL_MAIN_HANDLED", {});
+    @cInclude("SDL3/SDL_main.h");
+    @cInclude("SDL3/SDL_opengl.h");
+});
+
+// const gl = @import("main").gl;
+pub const gl = @cImport
+({
+    if(PLATFORM==.NATIVE)
+        @cInclude("glad/glad.h")
+    else
+    {
+        @cInclude("GLES3/gl3.h");
+        // @cInclude("EGL/egl.h");
+        // @cInclude("EGL/eglext.h");
+    }
+});
+pub const emscripten= struct{
+    pub const c= @cImport(if(PLATFORM==.WEB){ @cInclude("emscripten.h"); });
+
+    pub const set_main_loop= c.emscripten_set_main_loop;
+    pub const cancel_main_loop= c.emscripten_cancel_main_loop;
+};
 
 /// Make an example demo that opens a window with the Zig Logo
 /// Uses pure SDL3
@@ -13,8 +41,8 @@ pub fn main() void
 {
     appInit() catch return;
 
-    if(APP==.WEB)
-    { em.set_main_loop(mainLoop, 0, true); }
+    if(PLATFORM==.WEB)
+    { emscripten.set_main_loop(mainLoop, 0, true); }
     else
     { while(true){ mainLoop(); } }
 }
@@ -25,8 +53,8 @@ fn mainLoop() callconv(.c) void
     {
         appQuit();
         
-        if(APP==.WEB)
-        { em.cancel_main_loop(); }
+        if(PLATFORM==.WEB)
+        { emscripten.cancel_main_loop(); }
         else { std.process.exit(0); }
     }
 
@@ -53,7 +81,7 @@ fn appInit() !void
 {
     const mem = std.heap.c_allocator;
     // set current working directory
-    if (APP==.WEB) {
+    if (PLATFORM==.WEB) {
         const dir = try std.fs.cwd().openDir("/wasm_data", .{});
         if (@import("builtin").os.tag == .emscripten) {
             try dir.setAsCwd();

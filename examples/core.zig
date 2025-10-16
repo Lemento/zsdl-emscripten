@@ -1,0 +1,380 @@
+// Here we define some defaults for all the apps
+// Specifically libraries that need different headers if compiling to native vs web
+const builtin = @import("builtin");
+
+pub const PLATFORM =
+    if(builtin.os.tag == .emscripten or builtin.os.tag == .wasi)
+        .WEB else .NATIVE;
+
+pub const sdl = @cImport
+({
+    @cInclude("SDL3/SDL.h");
+    @cInclude("SDL3/SDL_revision.h");
+    @cDefine("SDL_MAIN_HANDLED", {});
+    @cInclude("SDL3/SDL_main.h");
+    @cInclude("SDL3/SDL_opengl.h");
+});
+
+// const gl = @import("main").gl;
+pub const gl =
+    if(PLATFORM==.NATIVE)
+        @cImport(@cInclude("glad/glad.h"))
+    else
+        @cImport(@cInclude("GLES3/gl3.h"));
+
+const GLuint= gl.GLuint;
+
+pub const emscripten= struct{
+    pub const c= @cImport(if(PLATFORM==.WEB){ @cInclude("emscripten.h"); });
+
+    pub const set_main_loop= c.emscripten_set_main_loop;
+    pub const cancel_main_loop= c.emscripten_cancel_main_loop;
+};
+
+pub const GLShader= struct{ id:GLuint, };
+pub const GLPool = struct
+{
+    allocator: std.mem.Allocator,
+    vaos: std.ArrayList(GLuint),
+    buffers: std.ArrayList(GLuint),
+    shaders: std.ArrayList(GLuint),
+    textures: std.ArrayList(GLuint),
+
+    pub const empty= GLPool{ .allocator=undefined, .vaos=.empty, .buffers=.empty, .shaders=.empty, .textures=.empty };
+
+    pub fn init(pool: *GLPool, allocator: std.mem.Allocator) !void
+    {
+        pool.allocator = allocator;
+        errdefer pool.deinit();
+
+        try pool.vaos.ensureUnusedCapacity(allocator, 2);
+        try pool.buffers.ensureUnusedCapacity(allocator, 8);
+        try pool.shaders.ensureUnusedCapacity(allocator, 4);
+        try pool.textures.ensureUnusedCapacity(allocator, 2);
+    }
+
+    pub fn deinit(pool: *GLPool) void
+    {
+        if(pool.vaos.items.len > 0){ gl.glDeleteVertexArrays(@intCast(pool.vaos.items.len), pool.vaos.items.ptr); }
+        pool.vaos.deinit(pool.allocator);
+
+        if(pool.buffers.items.len > 0){ gl.glDeleteBuffers(@intCast(pool.buffers.items.len), pool.buffers.items.ptr); }
+        pool.buffers.deinit(pool.allocator);
+
+        for(pool.shaders.items) |program| { gl.glDeleteProgram(program); }
+        pool.shaders.deinit(pool.allocator);
+
+        if(pool.textures.items.len > 0){ gl.glDeleteTextures(@intCast(pool.textures.items.len), pool.textures.items.ptr); }
+        pool.textures.deinit(pool.allocator);
+
+        pool.* = undefined;
+    }
+
+    pub fn genVAO(pool: *GLPool) !gl.GLuint
+    {
+        const nVAO= try pool.vaos.addOne(pool.allocator);
+        gl.glGenVertexArrays(1, nVAO);
+
+        return nVAO.*;
+    }
+
+    pub fn genBuffer(pool: *GLPool) !gl.GLuint
+    {
+        const nBuffer= try pool.buffers.addOne(pool.allocator);
+        gl.glGenBuffers(1, nBuffer);
+        
+        return nBuffer.*;
+    }
+
+    pub fn genShader(pool: *GLPool, vertShaderSrc: []const[*:0]const u8, fragShaderSrc: []const[*:0]const u8) !GLShader
+    {
+        const nShader = try pool.shaders.addOne(pool.allocator);
+        nShader.* = try loadShaderFromSource(vertShaderSrc, fragShaderSrc);
+        return .{.id=nShader.*};
+    }
+};
+
+const Vertex= enum{ OnlyPosition, PosAndColor, };
+
+pub const Mesh= struct
+{
+    vertexType: Vertex,
+    vertexStride: u8,
+    lenVertices: u31,
+    ptrVertices: [*]const f32,
+    elements: []const u32,
+
+    pub const create= createMesh;
+    pub const Object= RenderObject;
+    pub const createObject= createRenderObject;
+
+    pub fn sizeOfVertices(m: Mesh) i32
+    { return m.vertexStride*m.lenVertices*@sizeOf(f32); }
+    pub fn enableVertexAttributes(m: Mesh) void
+    {
+        const v_stride:i32= @as(i32, m.vertexStride)*@sizeOf(f32);
+        switch(m.vertexType)
+        {
+            .OnlyPosition=>
+            {
+                gl.glVertexAttribPointer(0, 3, gl.GL_FLOAT, gl.GL_FALSE, v_stride, null);
+                gl.glEnableVertexAttribArray(0);
+            },
+            .PosAndColor=>
+            {
+                gl.glVertexAttribPointer(0, 3, gl.GL_FLOAT, gl.GL_FALSE, v_stride, null);
+                gl.glEnableVertexAttribArray(0);
+                gl.glVertexAttribPointer(1, 3, gl.GL_FLOAT, gl.GL_FALSE, v_stride, @ptrFromInt(3*@sizeOf(f32)));
+                gl.glEnableVertexAttribArray(1);
+            },
+        }
+    }
+};
+
+fn createMesh(vType: Vertex, vertices: []const f32, elements: []const u32) Mesh
+{
+    if(vertices.len == 0) @panic("No vertices passed!");
+
+    const v_stride:u8= switch(vType)
+    {
+        .OnlyPosition=> 3,
+        .PosAndColor=> 6,
+        // else => true,
+    };
+
+    if((vertices.len%v_stride != 0))
+        @panic("Invalid length vertices!");
+
+    return Mesh
+    {
+        .vertexType = vType,
+        .vertexStride = v_stride,
+        .lenVertices = @intCast(@divExact(vertices.len, v_stride)),
+        .ptrVertices = vertices.ptr,
+        .elements = elements
+    };
+}
+
+const RenderObject= packed struct
+{
+    type: enum(u1){ Vertex, Element },
+    vao: GLuint,
+    len: u31,
+
+    pub fn draw(obj: RenderObject) void
+    {
+        switch(obj.type)
+        {
+            .Element=>
+            {
+                gl.glBindVertexArray(obj.vao);
+                gl.glDrawElements(gl.GL_TRIANGLES, obj.len, gl.GL_UNSIGNED_INT, null);
+            },
+            .Vertex=>
+            {
+                gl.glBindVertexArray(obj.vao);
+                gl.glDrawArrays(gl.GL_TRIANGLES, 0, obj.len);
+            },
+        }
+    }
+};
+
+fn createRenderObject(m: Mesh, pool: *GLPool) !RenderObject
+{
+    const nVAO: GLuint= try pool.genVAO();
+    gl.glBindVertexArray(nVAO);
+    defer gl.glBindVertexArray(0);
+
+    const vbo: GLuint= try pool.genBuffer();
+    gl.glBindBuffer(gl.GL_ARRAY_BUFFER, vbo);
+    gl.glBufferData(gl.GL_ARRAY_BUFFER, m.sizeOfVertices(), m.ptrVertices, gl.GL_STATIC_DRAW);
+
+    m.enableVertexAttributes();
+
+    if(m.elements.len > 0)
+    {
+        const ebo= try pool.genBuffer();
+        gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, ebo);
+        gl.glBufferData(gl.GL_ELEMENT_ARRAY_BUFFER, @intCast(@sizeOf(u32)*m.elements.len), m.elements.ptr, gl.GL_STATIC_DRAW);
+
+        return RenderObject{ .type= .Element, .vao= nVAO, .len= @intCast(m.elements.len), };
+    }
+
+    return RenderObject
+    {
+      .type= .Vertex,
+      .vao= nVAO,
+      .len= m.lenVertices,
+    };
+}
+
+pub fn loadShaderFromSource(vertex_shader_source: []const [*:0]const u8, fragment_shader_source: []const [*:0]const u8) !gl.GLuint {
+    const vertex_shader = try compileShader(vertex_shader_source, gl.GL_VERTEX_SHADER);
+    defer gl.glDeleteShader(vertex_shader);
+
+    const fragment_shader: GLuint = try compileShader(fragment_shader_source, gl.GL_FRAGMENT_SHADER);
+    defer gl.glDeleteShader(fragment_shader);
+
+    const shader_program = gl.glCreateProgram();
+    errdefer gl.glDeleteProgram(shader_program);
+    gl.glAttachShader(shader_program, vertex_shader);
+    gl.glAttachShader(shader_program, fragment_shader);
+
+    // Link the program
+    gl.glLinkProgram(shader_program);
+
+    var linked: i32 = undefined;
+    gl.glGetProgramiv(shader_program, gl.GL_LINK_STATUS, &linked);
+    if (linked == gl.GL_FALSE) {
+        var info_len: i32 = 0;
+        gl.glGetProgramiv(shader_program, gl.GL_INFO_LOG_LENGTH, &info_len);
+        const static = struct {
+            var buffer = std.mem.zeroes([255:0]u8);
+        };
+        gl.glGetProgramInfoLog(shader_program, info_len, null, &static.buffer);
+        std.log.err("{s}", .{static.buffer});
+        return error.FailureLinkingProgram;
+    }
+
+    return shader_program;
+}
+
+pub fn compileShader(shader_source: []const [*:0]const u8, shaderType: u32) !u32 {
+    const program: GLuint = gl.glCreateShader(shaderType);
+    gl.glShaderSource(program, @intCast(shader_source.len), @ptrCast(@alignCast(shader_source.ptr)), null);
+    gl.glCompileShader(program);
+    errdefer gl.glDeleteShader(program);
+
+    var status: i32 = undefined;
+    gl.glGetShaderiv(program, gl.GL_COMPILE_STATUS, &status);
+
+    if (status == gl.GL_FALSE) {
+        var info_len: i32 = 0;
+        gl.glGetShaderiv(program, gl.GL_INFO_LOG_LENGTH, &info_len);
+        const static = struct {
+            var buffer = std.mem.zeroes([255:0]u8);
+        };
+        gl.glGetShaderInfoLog(program, info_len, null, &static.buffer);
+        std.log.err("{s}", .{static.buffer[0.. :0]});
+        return error.FailedToCompileShader;
+    }
+
+    return program;
+}
+
+pub const InitResult= struct { screen: *sdl.SDL_Window, glContext: sdl.SDL_GLContext };
+
+const InitOptions= struct
+{
+    /// Sets the starting background color for the window
+    /// 
+    /// By default, the color is a dull blue to make certain that SDL_GL functions are working
+    /// 
+    /// Omits the 'alpha' parameter in glClearColor
+    bgColor: std.meta.Tuple(&.{f32,f32,f32})= .{0.4, 0.6, 0.8},
+    /// Sets vsync. If 0, turns off vsync,
+    setVSync: ?i32= null,
+};
+
+pub fn initSDLandOpenGL(title: [*:0]const u8, w: u31, h: u31, opt: InitOptions) !InitResult
+{
+    // Initialize SDL systems
+    if(sdl.SDL_Init(sdl.SDL_INIT_VIDEO) == false)
+    {
+        std.log.err("Failed to initialize SDL", .{});
+        return error.SDL;
+    }
+    errdefer sdl.SDL_Quit();
+
+    const screen = sdl.SDL_CreateWindow(title, w, h, sdl.SDL_WINDOW_HIDDEN | sdl.SDL_WINDOW_OPENGL)
+    orelse
+    {
+        std.log.err("Failed to create SDL_Window", .{});
+        return error.SDL;
+    };
+    errdefer sdl.SDL_DestroyWindow(screen);
+
+    // setup gl
+    const gl_ctx= sdl.SDL_GL_CreateContext(screen)
+    orelse
+    {
+        std.log.err("Failed to create OpenGL context",.{});
+        return error.SDL;
+    };
+    errdefer{ _=sdl.SDL_GL_DestroyContext(gl_ctx); }
+
+    // On web gl functions are given from emscripten
+    if(PLATFORM==.NATIVE)
+    {
+        _=gl.gladLoadGLLoader(@ptrCast(&sdl.SDL_GL_GetProcAddress));
+    }
+
+    if(sdl.SDL_GL_SetAttribute(sdl.SDL_GL_CONTEXT_PROFILE_MASK, sdl.SDL_GL_CONTEXT_PROFILE_ES) == false)
+    { std.log.err("Failed to set context profile!",.{}); }
+    if(sdl.SDL_GL_SetAttribute(sdl.SDL_GL_DOUBLEBUFFER, 1) == false)
+    { std.log.err("Failed to set doublebuffer!",.{}); }
+    @call(.auto, gl.glClearColor, opt.bgColor++.{1.0});
+    
+    if(opt.setVSync) |interval|
+    {
+        if(sdl.SDL_GL_SetSwapInterval(interval) == false)
+        { std.log.err("Failed to set VSync!",.{}); }
+    }
+
+    gl.glViewport(0, 0, w, h);
+
+    return .{ .screen=screen, .glContext = gl_ctx, };
+}
+
+const std = @import("std");
+const panic= std.debug.panic;
+
+const EmptyAllocator= struct
+{
+    pub const init=EmptyAllocator{};
+    pub inline fn allocator(_: EmptyAllocator) std.mem.Allocator
+    { return std.heap.c_allocator; }
+    pub fn deinit(_: EmptyAllocator) void{}
+};
+pub const Allocator=
+    if(PLATFORM==.NATIVE) std.heap.GeneralPurposeAllocator(.{})
+    else EmptyAllocator;
+
+const App = @import("impl").App;
+var app_status: ?anyerror= null;
+var app= App{};
+
+pub fn main() void
+{
+    app.init() catch |err| { app_status=err; };
+
+    if(PLATFORM==.WEB)
+    { emscripten.set_main_loop(mainLoop, 0, true); }
+    else
+    { while(true){ mainLoop(); } }
+}
+
+fn mainLoop() callconv(.c) void
+{
+    if(app_status) |status|
+    {
+        switch(status)
+        {
+            error.RuntimeRequestQuit=>{},
+            error.SDL=> panic("SDL: {s}", .{sdl.SDL_GetError()}),
+            else=> panic("{s}", .{@errorName(status)}),
+        }
+        app.quit();
+        
+        if(PLATFORM==.WEB)
+        { emscripten.cancel_main_loop(); }
+        else
+        { std.process.exit(0); }
+    }
+
+    var event: sdl.SDL_Event= undefined;
+    while(sdl.SDL_PollEvent(&event))
+    { app.event(event) catch |err| { app_status=err; return; }; }
+    
+    app.iterate() catch |err| { app_status=err; };
+}

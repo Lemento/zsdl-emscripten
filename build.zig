@@ -7,7 +7,11 @@ const SOURCES =struct
 {
     pub const demosdl= @import("src/demosdl.zig");
     pub const demogl= @import("src/demogl.zig");
-    pub const hello_triangle= @import("src/hello_triangle.zig");
+};
+
+const EXAMPLES= struct {
+    pub const hello_triangle= @import("examples/hello_triangle.zig");
+    pub const transformations= @import("examples/transformations.zig");
 };
 
 pub fn build(b: *std.Build) void
@@ -49,22 +53,31 @@ pub fn build(b: *std.Build) void
         .lto=lto
     };
 
-    // loops through SOURCES struct so that any source can be built and run with zig build run-SRC_NAME
+    // loops through SOURCES struct so that any source can be built and run with zig build run-app_name
     // Sources are only built if specified or run
-    inline for(@typeInfo(SOURCES).@"struct".decls) |src|
-    { buildApp(b, src.name, options); }
+    inline for(comptime std.meta.declarations(SOURCES)) |src|
+    { buildApp(b, "src", src.name, @field(SOURCES, src.name), options); }
+
+    inline for(comptime std.meta.declarations(EXAMPLES)) |src|
+    { buildApp(b, "examples", src.name, @field(EXAMPLES, src.name), options); }
 }
 
-fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
+inline fn buildApp(b: *std.Build, dir: []const u8, app_name: []const u8, src: type, opt: anytype) void
 {
-    const src_path= "src/"++exe_name++".zig";
+    const src_path= dir++"/"++app_name++".zig";
+    // std.log.debug("building for {s}", .{@typeName(@TypeOf(src))});
 
-    const app_mod = b.createModule(.{
-        .target = opt.target,
-        .optimize = opt.optimize,
-        .root_source_file = b.path(src_path),
-        .link_libc = true,
-    });
+    // Let source specify its own build if specified. Otherwise build it as source by default
+    const app_mod =
+        if(@hasDecl(src, "build"))
+            src.build(b, src_path, opt)
+            
+        else b.createModule(.{
+            .target = opt.target,
+            .optimize = opt.optimize,
+            .root_source_file = b.path(src_path),
+            .link_libc = true,
+        });
 
     if (opt.target.result.os.tag == .windows and opt.target.result.abi == .msvc) {
         // Work around a problematic definition in wchar.h in Windows SDK version 10.0.26100.0
@@ -72,13 +85,6 @@ fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
     }
     if (opt.emsdk_include_path) |path| {
         app_mod.addSystemIncludePath(path);
-    }
-
-    const os_tag = opt.target.result.os.tag;
-    if(os_tag != .emscripten and os_tag != .wasi)
-    {
-        app_mod.addIncludePath(b.path("glad/include"));
-        app_mod.addCSourceFile(.{ .file=b.path("glad/src/glad.c"), .flags=&.{ "-fno-sanitize=undefined" }});
     }
 
     const sdl_dep = b.dependency("sdl", .{
@@ -89,15 +95,22 @@ fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
     const sdl_lib = sdl_dep.artifact("SDL3");
     app_mod.linkLibrary(sdl_lib);
 
-    const run_name= "run-"++exe_name;
-    const run_step = b.step(run_name, "Run '"++exe_name++"' program");
+    const os_tag = opt.target.result.os.tag;
+    if(os_tag != .emscripten and os_tag != .wasi)
+    {
+        app_mod.addIncludePath(b.path("glad/include"));
+        app_mod.addCSourceFile(.{ .file=b.path("glad/src/glad.c"), .flags=&.{ "-fno-sanitize=undefined" }});
+    }
+
+    const run_name= "run-"++app_name;
+    const run_step = b.step(run_name, "Run '"++app_name++"' program");
 
     if (opt.target.result.os.tag == .emscripten) {
         // Build for the Web.
 
         const app_lib = b.addLibrary(.{
             .linkage = .static,
-            .name = exe_name,
+            .name = app_name,
             .root_module = app_mod,
         });
         app_lib.lto = opt.lto;
@@ -158,7 +171,7 @@ fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
 
         run_emcc.addArg("-sGL_ENABLE_GET_PROC_ADDRESS=1");
         run_emcc.addArg("-sINITIAL_HEAP=64Mb");
-        run_emcc.addArg("-sALLOW_MEMORY_GROWTH=0");
+        run_emcc.addArg("-sALLOW_MEMORY_GROWTH=1");
         run_emcc.addArg("-sSTACK_SIZE=32Kb");
 
         run_emcc.addArg("-sFULL-ES3=1");
@@ -178,7 +191,7 @@ fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
         )));
 
         run_emcc.addArg("-o");
-        const app_html = run_emcc.addOutputFileArg(exe_name++".html");
+        const app_html = run_emcc.addOutputFileArg(app_name++".html");
 
         const install_www= &b.addInstallDirectory(.{
             .source_dir = app_html.dirname(),
@@ -186,10 +199,10 @@ fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
             .install_subdir = "",
         }).step;
         // b.getInstallStep().dependOn(link_step);
-        b.step(exe_name, "Build '"++exe_name++"' for desktop").dependOn(install_www);
+        b.step(app_name, "Build '"++app_name++"' for desktop").dependOn(install_www);
 
         const run_emrun = b.addSystemCommand(&.{"emrun"});
-        run_emrun.addArg(b.pathJoin(&.{ b.install_path, "www", exe_name++".html",  }));
+        run_emrun.addArg(b.pathJoin(&.{ b.install_path, "www", app_name++".html",  }));
         run_emrun.addArg("--browser="++requested_browser);
         // if (b.args) |args| run_emrun.addArgs(args);
         run_emrun.step.dependOn(install_www);
@@ -199,20 +212,22 @@ fn buildApp(b: *std.Build, comptime exe_name: []const u8, opt: anytype) void
     } else {
         // Build for desktop.
         const app_exe = b.addExecutable(.{
-            .name = exe_name,
+            .name = app_name,
             .root_module = app_mod,
         });
         app_exe.lto = opt.lto;
-        b.installArtifact(app_exe);
 
         const install_exe= b.addInstallArtifact(app_exe, .{});
-        // b.getInstallStep().dependOn(&install_exe.step);
-        b.step(exe_name, "Build '"++exe_name++"' for desktop").dependOn(&install_exe.step);
+
+        const build_step= b.step(app_name, "Build '"++app_name++"' for desktop");
+        build_step.dependOn(&install_exe.step);
+        // build_step.dependOn(b.getInstallStep());
         // build_all_cmd.dependOn (&install_exe.step);
 
         const run_app = b.addRunArtifact(app_exe);
-        if (b.args) |args| run_app.addArgs(args);
+        // run_app.step.dependOn(b.getInstallStep());
         run_app.step.dependOn(&install_exe.step);
+        if (b.args) |args| run_app.addArgs(args);
 
         run_step.dependOn(&run_app.step);
     }
