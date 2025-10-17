@@ -7,13 +7,11 @@ zig build run-demosdl
 ```
 
 
-
 To compile for web here you first need to get [emscripten](https://emscripten.org/docs/getting_started/downloads.html)
 
 ```
 git clone https://github.com/emscripten-core/emsdk.git
 ```
-
 
 
 Install and activate it:
@@ -24,7 +22,6 @@ Install and activate it:
 ```
 
 
-
 Then you can start compiling like so:
 
 ```
@@ -32,9 +29,14 @@ zig build run-demosdl -Dtarget=wasm32-emscripten
 ```
 
 
-
 Remember, you need to install and activate emscripten in every new shell session unless you save it to your path which I don't like to do since I don't need it on hand.
 
+
+One other example included is a nuklear-ui demo
+
+```
+zig build run-nuklear_demo
+```
 
 
 ## TODO

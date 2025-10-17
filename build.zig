@@ -7,6 +7,7 @@ const SOURCES =struct
 {
     pub const demosdl= @import("src/demosdl.zig");
     pub const demogl= @import("src/demogl.zig");
+    pub const nuklear_demo= @import("src/nuklear_demo.zig");
 };
 
 const EXAMPLES= struct {
@@ -20,25 +21,11 @@ pub fn build(b: *std.Build) void
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    var system_include_path: ?std.Build.LazyPath = null;
+    var emsdk_include_path: ?std.Build.LazyPath = null;
     var lto: ?std.zig.LtoMode = null;
     switch (target.result.os.tag) {
         .emscripten => {
-            if (b.sysroot == null) {
-
-                // std.log.err("'--sysroot' is required when building for Emscripten", .{});
-                // std.process.exit(1);
-                
-                const emsdk_path1 = emsdkPath(b);
-                const emsdk_path = emsdk_path1[0..emsdk_path1.len-2];
-
-                const emsdk_sysroot = b.pathJoin
-                    (&.{ emsdk_path, "sysroot", });
-                
-                b.sysroot = emsdk_sysroot;
-            }
-            const emsdk_include = b.pathJoin(&.{ b.sysroot.?, "include" });
-            system_include_path = .{ .cwd_relative = emsdk_include };
+            emsdk_include_path = emsdkAddIncludePath(b);
 
             if (optimize != .Debug) {
                 lto = .full;
@@ -46,12 +33,15 @@ pub fn build(b: *std.Build) void
         },
         else => {},
     }
-
+    const sdl_dep = b.dependency("sdl",.
+    {
+        .target = target,
+        .optimize = optimize,
+    });
     const options=.
     {
-        .target=target, .optimize=optimize,
-        .emsdk_include_path= system_include_path,
-        .lto=lto
+        .target=target, .optimize=optimize, .lto=lto,
+        .sdl=sdl_dep, .emsdk_include_path=emsdk_include_path
     };
 
     // loops through SOURCES struct so that any source can be built and run with zig build run-app_name
@@ -80,29 +70,26 @@ inline fn buildApp(b: *std.Build, dir: []const u8, app_name: []const u8, src: ty
             .link_libc = true,
         });
 
-    if (opt.target.result.os.tag == .windows and opt.target.result.abi == .msvc) {
+    const os_tag = opt.target.result.os.tag;
+    if (os_tag == .windows and opt.target.result.abi == .msvc) {
         // Work around a problematic definition in wchar.h in Windows SDK version 10.0.26100.0
         app_mod.addCMacro("_Avx2WmemEnabledWeakValue", "_Avx2WmemEnabled");
     }
-    if (opt.emsdk_include_path) |path| {
-        app_mod.addSystemIncludePath(path);
-    }
 
-    const sdl_dep = b.dependency("sdl", .{
-        .target = opt.target,
-        .optimize = opt.optimize,
-        .lto = opt.lto,
-    });
-    const sdl_lib = sdl_dep.artifact("SDL3");
-    app_mod.linkLibrary(sdl_lib);
-    app_mod.addSystemIncludePath(sdl_dep.path("include"));
-    app_mod.addSystemIncludePath(sdl_dep.path("src/video/khronos"));
-
-    const os_tag = opt.target.result.os.tag;
     if(os_tag != .emscripten and os_tag != .wasi)
     {
         app_mod.addIncludePath(b.path("glad/include"));
         app_mod.addCSourceFile(.{ .file=b.path("glad/src/glad.c"), .flags=&.{ "-fno-sanitize=undefined" }});
+    }
+
+    if (opt.emsdk_include_path) |path| {
+        app_mod.addSystemIncludePath(path);
+    }
+
+    {
+        var sdl_artifact= opt.sdl.artifact("SDL3");
+        sdl_artifact.lto= opt.lto;
+        app_mod.linkLibrary (sdl_artifact);
     }
 
     const run_name= "run-"++app_name;
@@ -234,6 +221,22 @@ inline fn buildApp(b: *std.Build, dir: []const u8, app_name: []const u8, src: ty
 
         run_step.dependOn(&run_app.step);
     }
+}
+
+fn emsdkAddIncludePath(b: *std.Build) std.Build.LazyPath
+{
+    if (b.sysroot == null) {
+        // injest sysroot as commandline argument for emcc
+        const emsdk_path1 = emsdkPath(b);
+        const emsdk_path = emsdk_path1[0..emsdk_path1.len-2];
+
+        const emsdk_sysroot = b.pathJoin(&.{ emsdk_path, "sysroot", });
+                
+        b.sysroot = emsdk_sysroot;
+    }
+    const emsdk_include = b.pathJoin(&.{ b.sysroot.?, "include" });
+
+    return .{ .cwd_relative= emsdk_include };
 }
 
 inline fn emsdkPath(b: *std.Build) []const u8 {
