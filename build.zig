@@ -12,6 +12,7 @@ const SOURCES =struct
 const EXAMPLES= struct {
     pub const hello_triangle= @import("examples/hello_triangle.zig");
     pub const transformations= @import("examples/transformations.zig");
+    pub const textured= @import("examples/textured.zig");
 };
 
 pub fn build(b: *std.Build) void
@@ -94,6 +95,8 @@ inline fn buildApp(b: *std.Build, dir: []const u8, app_name: []const u8, src: ty
     });
     const sdl_lib = sdl_dep.artifact("SDL3");
     app_mod.linkLibrary(sdl_lib);
+    app_mod.addSystemIncludePath(sdl_dep.path("include"));
+    app_mod.addSystemIncludePath(sdl_dep.path("src/video/khronos"));
 
     const os_tag = opt.target.result.os.tag;
     if(os_tag != .emscripten and os_tag != .wasi)

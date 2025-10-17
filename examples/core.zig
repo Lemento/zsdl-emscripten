@@ -14,8 +14,8 @@ pub const sdl = @cImport
     @cInclude("SDL3/SDL_main.h");
     @cInclude("SDL3/SDL_opengl.h");
 });
+pub const stb_image= @cImport(@cInclude("stb_image.h"));
 
-// const gl = @import("main").gl;
 pub const gl =
     if(PLATFORM==.NATIVE)
         @cImport(@cInclude("glad/glad.h"))
@@ -31,7 +31,17 @@ pub const emscripten= struct{
     pub const cancel_main_loop= c.emscripten_cancel_main_loop;
 };
 
-pub const GLShader= struct{ id:GLuint, };
+pub const GLShader= struct
+{
+    id:GLuint,
+
+    pub inline fn use(program: GLShader) void
+    { gl.glUseProgram(program.id); }
+
+    pub inline fn getUniformLocation(program: GLShader, name: [*:0]const u8) gl.GLint
+    { return gl.glGetUniformLocation(program.id, name); }
+};
+
 pub const GLPool = struct
 {
     allocator: std.mem.Allocator,
@@ -92,9 +102,17 @@ pub const GLPool = struct
         nShader.* = try loadShaderFromSource(vertShaderSrc, fragShaderSrc);
         return .{.id=nShader.*};
     }
+
+    pub fn genTexture(pool: *GLPool) !GLuint
+    {
+        const nTexture= try pool.textures.addOne(pool.allocator);
+        gl.glGenTextures(1, nTexture);
+
+        return nTexture.*;
+    }
 };
 
-const Vertex= enum{ OnlyPosition, PosAndColor, };
+const Vertex= enum{ OnlyPosition, PosAndColor, Textured, };
 
 pub const Mesh= struct
 {
@@ -127,6 +145,13 @@ pub const Mesh= struct
                 gl.glVertexAttribPointer(1, 3, gl.GL_FLOAT, gl.GL_FALSE, v_stride, @ptrFromInt(3*@sizeOf(f32)));
                 gl.glEnableVertexAttribArray(1);
             },
+            .Textured=>
+            {
+                gl.glVertexAttribPointer(0, 3, gl.GL_FLOAT, gl.GL_FALSE, v_stride, null);
+                gl.glEnableVertexAttribArray(0);
+                gl.glVertexAttribPointer(1, 2, gl.GL_FLOAT, gl.GL_FALSE, v_stride, @ptrFromInt(3*@sizeOf(f32)));
+                gl.glEnableVertexAttribArray(1);
+            },
         }
     }
 };
@@ -139,6 +164,7 @@ fn createMesh(vType: Vertex, vertices: []const f32, elements: []const u32) Mesh
     {
         .OnlyPosition=> 3,
         .PosAndColor=> 6,
+        .Textured=> 5,
         // else => true,
     };
 
@@ -161,22 +187,7 @@ const RenderObject= packed struct
     vao: GLuint,
     len: u31,
 
-    pub fn draw(obj: RenderObject) void
-    {
-        switch(obj.type)
-        {
-            .Element=>
-            {
-                gl.glBindVertexArray(obj.vao);
-                gl.glDrawElements(gl.GL_TRIANGLES, obj.len, gl.GL_UNSIGNED_INT, null);
-            },
-            .Vertex=>
-            {
-                gl.glBindVertexArray(obj.vao);
-                gl.glDrawArrays(gl.GL_TRIANGLES, 0, obj.len);
-            },
-        }
-    }
+    pub const draw= drawRenderObject;
 };
 
 fn createRenderObject(m: Mesh, pool: *GLPool) !RenderObject
@@ -206,6 +217,22 @@ fn createRenderObject(m: Mesh, pool: *GLPool) !RenderObject
       .vao= nVAO,
       .len= m.lenVertices,
     };
+}
+
+pub fn drawRenderObject(obj: RenderObject) void
+{
+    gl.glBindVertexArray(obj.vao);
+    switch(obj.type)
+    {
+        .Element=>
+        {
+            gl.glDrawElements(gl.GL_TRIANGLES, obj.len, gl.GL_UNSIGNED_INT, null);
+        },
+        .Vertex=>
+        {
+            gl.glDrawArrays(gl.GL_TRIANGLES, 0, obj.len);
+        },
+    }
 }
 
 pub fn loadShaderFromSource(vertex_shader_source: []const [*:0]const u8, fragment_shader_source: []const [*:0]const u8) !gl.GLuint {
