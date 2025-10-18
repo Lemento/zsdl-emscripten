@@ -9,7 +9,7 @@ pub fn build(b: *std.Build, _: anytype, opt: anytype) *std.Build.Module
         .link_libc= true,
     });
 
-    app_mod.addSystemIncludePath(opt.sdl.path("include"));
+    app_mod.addSystemIncludePath(b.dependency("sdl",.{}).path("include"));
     app_mod.addCSourceFile(.{.file=b.path("src/nuklear/main.c"), .flags=c_flags});
     app_mod.addIncludePath(b.path("src/nuklear"));
     

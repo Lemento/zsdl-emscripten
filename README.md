@@ -6,23 +6,7 @@ To run the normal demo run:
 zig build run-demosdl
 ```
 
-
-To compile for web here you first need to get [emscripten](https://emscripten.org/docs/getting_started/downloads.html)
-
-```
-git clone https://github.com/emscripten-core/emsdk.git
-```
-
-
-Install and activate it:
-
-```
-./emsdk/emsdk install latest
-./emsdk/emsdk activate latest
-```
-
-
-Then you can start compiling like so:
+When compiling for web zig will fetch emsdk automatically and build it so all you have to do is specify your target like so:
 
 ```
 zig build run-demosdl -Dtarget=wasm32-emscripten
@@ -41,7 +25,7 @@ zig build run-nuklear_demo
 
 ## TODO
 
-*	Fetch emscripten as a dependency and run it from build like in zemscripten so I dont have to run clone the repo and install everytime.
+*	~~Fetch emscripten as a dependency and run it from build like in zemscripten so I dont have to run clone the repo and install everytime.~~
 
 *	~~Create more samples for 3D graphics and move all of them to their own directory.~~
 

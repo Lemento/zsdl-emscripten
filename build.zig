@@ -21,28 +21,8 @@ pub fn build(b: *std.Build) void
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    var emsdk_include_path: ?std.Build.LazyPath = null;
-    var lto: ?std.zig.LtoMode = null;
-    switch (target.result.os.tag) {
-        .emscripten => {
-            emsdk_include_path = emsdkAddIncludePath(b);
-
-            if (optimize != .Debug) {
-                lto = .full;
-            }
-        },
-        else => {},
-    }
-    const sdl_dep = b.dependency("sdl",.
-    {
-        .target = target,
-        .optimize = optimize,
-    });
     const options=.
-    {
-        .target=target, .optimize=optimize, .lto=lto,
-        .sdl=sdl_dep, .emsdk_include_path=emsdk_include_path
-    };
+    { .target=target, .optimize=optimize, };
 
     // loops through SOURCES struct so that any source can be built and run with zig build run-app_name
     // Sources are only built if specified or run
@@ -70,42 +50,81 @@ inline fn buildApp(b: *std.Build, dir: []const u8, app_name: []const u8, src: ty
             .link_libc = true,
         });
 
-    const os_tag = opt.target.result.os.tag;
-    if (os_tag == .windows and opt.target.result.abi == .msvc) {
-        // Work around a problematic definition in wchar.h in Windows SDK version 10.0.26100.0
-        app_mod.addCMacro("_Avx2WmemEnabledWeakValue", "_Avx2WmemEnabled");
-    }
-
-    if(os_tag != .emscripten and os_tag != .wasi)
-    {
-        app_mod.addIncludePath(b.path("glad/include"));
-        app_mod.addCSourceFile(.{ .file=b.path("glad/src/glad.c"), .flags=&.{ "-fno-sanitize=undefined" }});
-    }
-
-    if (opt.emsdk_include_path) |path| {
-        app_mod.addSystemIncludePath(path);
-    }
-
-    {
-        var sdl_artifact= opt.sdl.artifact("SDL3");
-        sdl_artifact.lto= opt.lto;
-        app_mod.linkLibrary (sdl_artifact);
-    }
-
     const run_name= "run-"++app_name;
     const run_step = b.step(run_name, "Run '"++app_name++"' program");
 
     if (opt.target.result.os.tag == .emscripten) {
         // Build for the Web.
+        run_step.dependOn (&buildWeb(b, app_name, app_mod, opt).step);
 
+    } else {
+        run_step.dependOn (&buildExe(b, app_name, app_mod, opt).step);
+    }
+}
+
+// Build for desktop.
+inline fn buildExe(b: *std.Build, name: []const u8, root_module: *std.Build.Module, opt: anytype) *std.Build.Step.Run
+{
+    const os_tag = opt.target.result.os.tag;
+    if (os_tag == .windows and opt.target.result.abi == .msvc) {
+        // Work around a problematic definition in wchar.h in Windows SDK version 10.0.26100.0
+        root_module.addCMacro("_Avx2WmemEnabledWeakValue", "_Avx2WmemEnabled");
+    }
+
+    root_module.addIncludePath(b.path("glad/include"));
+    root_module.addCSourceFile(.{ .file=b.path("glad/src/glad.c"), .flags=&.{ "-fno-sanitize=undefined" }});
+    const app_exe = b.addExecutable(.{
+        .name = name,
+        .root_module = root_module,
+    });
+
+    const sdl_dep = b.dependency("sdl",.
+    {
+        .target = opt.target,
+        .optimize = opt.optimize,
+    });
+    root_module.linkLibrary (sdl_dep.artifact("SDL3"));
+
+    const install_exe= b.addInstallArtifact(app_exe, .{});
+
+    const build_step= b.step(name, "Build '"++name++"' for desktop");
+    build_step.dependOn(&install_exe.step);
+    // build_step.dependOn(b.getInstallStep());
+    // build_all_cmd.dependOn (&install_exe.step);
+
+    const run_app = b.addRunArtifact(app_exe);
+    // run_app.step.dependOn(b.getInstallStep());
+    run_app.step.dependOn(&install_exe.step);
+    if (b.args) |args| run_app.addArgs(args);
+
+    return run_app;
+}
+
+inline fn buildWeb(b: *std.Build, name: []const u8, root_module: *std.Build.Module, opt: anytype) *std.Build.Step.Run
+{
         const app_lib = b.addLibrary(.{
             .linkage = .static,
-            .name = app_name,
-            .root_module = app_mod,
+            .name = name,
+            .root_module = root_module,
         });
-        app_lib.lto = opt.lto;
+        var lto: ?std.zig.LtoMode = null;
+        if (opt.optimize != .Debug) {
+            lto = .full;
+        }
+        app_lib.lto= lto;
+        app_lib.root_module.addSystemIncludePath(emsdkAddIncludePath(b));
 
-        const run_emcc = b.addSystemCommand(&.{"emcc"});
+        const sdl_dep = b.dependency("sdl",.
+        {
+            .target = opt.target,
+            .optimize = opt.optimize,
+            .lto=lto,
+        });
+        app_lib.root_module.linkLibrary (sdl_dep.artifact("SDL3"));
+
+        const emcc_cmd=switch(builtin.target.os.tag)
+            { .windows=> "emcc.bat", else=> "emcc" };
+        const run_emcc = b.addSystemCommand(&.{b.pathJoin(&.{emsdkPath(b,"upstream/emscripten"), emcc_cmd })});
 
         // Pass 'app_lib' and any static libraries it links with as input files.
         // 'app_lib.getCompileDependencies()' will always return 'app_lib' as the first element.
@@ -181,7 +200,7 @@ inline fn buildApp(b: *std.Build, dir: []const u8, app_name: []const u8, src: ty
         )));
 
         run_emcc.addArg("-o");
-        const app_html = run_emcc.addOutputFileArg(app_name++".html");
+        const app_html = run_emcc.addOutputFileArg(name++".html");
 
         const install_www= &b.addInstallDirectory(.{
             .source_dir = app_html.dirname(),
@@ -189,64 +208,47 @@ inline fn buildApp(b: *std.Build, dir: []const u8, app_name: []const u8, src: ty
             .install_subdir = "",
         }).step;
         // b.getInstallStep().dependOn(link_step);
-        b.step(app_name, "Build '"++app_name++"' for desktop").dependOn(install_www);
+        b.step(name, "Build '"++name++"' for desktop").dependOn(install_www);
 
-        const run_emrun = b.addSystemCommand(&.{"emrun"});
-        run_emrun.addArg(b.pathJoin(&.{ b.install_path, "www", app_name++".html",  }));
+        const emsdk_cmd= switch(builtin.os.tag){ .windows=> "emsdk.bat", else=> "emsdk" };
+        const emsdk_install= b.addSystemCommand(&.{ b.pathJoin(&.{ emsdkPath(b, ""), emsdk_cmd })});
+        emsdk_install.addArgs(&.{ "install", "latest" });
+        const emsdk_activate= b.addSystemCommand(&.{ b.pathJoin(&.{ emsdkPath(b, ""), emsdk_cmd }) });
+        emsdk_activate.addArgs(&.{ "activate", "latest" });
+        emsdk_activate.step.dependOn(&emsdk_install.step);
+
+        const emrun_cmd= switch(builtin.target.os.tag)
+            { .windows=> "emrun.bat", else=> "emrun" };
+        const run_emrun = b.addSystemCommand(&.{b.pathJoin
+            (&.{ emsdkPath(b, "upstream/emscripten"), emrun_cmd })});
+        run_emrun.addArg
+            (b.pathJoin(&.{ b.install_path, "www", name++".html",  }));
         run_emrun.addArg("--browser="++requested_browser);
         // if (b.args) |args| run_emrun.addArgs(args);
+        
+        run_emrun.step.dependOn(&emsdk_activate.step);
         run_emrun.step.dependOn(install_www);
 
-        run_step.dependOn(&run_emrun.step);
-
-    } else {
-        // Build for desktop.
-        const app_exe = b.addExecutable(.{
-            .name = app_name,
-            .root_module = app_mod,
-        });
-        app_exe.lto = opt.lto;
-
-        const install_exe= b.addInstallArtifact(app_exe, .{});
-
-        const build_step= b.step(app_name, "Build '"++app_name++"' for desktop");
-        build_step.dependOn(&install_exe.step);
-        // build_step.dependOn(b.getInstallStep());
-        // build_all_cmd.dependOn (&install_exe.step);
-
-        const run_app = b.addRunArtifact(app_exe);
-        // run_app.step.dependOn(b.getInstallStep());
-        run_app.step.dependOn(&install_exe.step);
-        if (b.args) |args| run_app.addArgs(args);
-
-        run_step.dependOn(&run_app.step);
-    }
+        return run_emrun;
 }
+
+const builtin= @import("builtin");
+
+inline fn emsdkPath(b: *std.Build, sub_path: []const u8) []const u8
+{ return b.dependency("emsdk",.{}).path(sub_path).getPath(b); }
 
 fn emsdkAddIncludePath(b: *std.Build) std.Build.LazyPath
 {
     if (b.sysroot == null) {
         // injest sysroot as commandline argument for emcc
-        const emsdk_path1 = emsdkPath(b);
-        const emsdk_path = emsdk_path1[0..emsdk_path1.len-2];
+        // const emsdk_path1 = b.run(&.{ "em-config", "CACHE" });
+        // const emsdk_path = emsdk_path1[0..emsdk_path1.len-2];
 
-        const emsdk_sysroot = b.pathJoin(&.{ emsdk_path, "sysroot", });
-                
+        // const emsdk_sysroot = b.pathJoin(&.{ emsdk_path, "sysroot", });
+        const emsdk_sysroot= b.pathJoin(&.{ emsdkPath(b, "upstream/emscripten/cache/sysroot") });
         b.sysroot = emsdk_sysroot;
     }
     const emsdk_include = b.pathJoin(&.{ b.sysroot.?, "include" });
 
     return .{ .cwd_relative= emsdk_include };
-}
-
-inline fn emsdkPath(b: *std.Build) []const u8 {
-    // const emsdk = b.dependency("emsdk", .{});
-    // const emsdk_path = emsdk.path("").getPath(b);
-    // return emsdk_path;
-
-    // const emsdk = std.fs.path.join(b.allocator,
-    // &.{ "emsdk" })
-    // catch unreachable;
-
-    return b.run(&.{ "em-config", "CACHE" });
 }
