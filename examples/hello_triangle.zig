@@ -119,15 +119,15 @@ pub fn appQuit(app: *App) void
     app.glPool.deinit();
 }
 
-pub fn appEvent(app: *App, evt: sdl.SDL_Event) anyerror!void
+pub fn appEvent(app: *App, evt: sdl.SDL_Event) core.EventFlag
 {
     switch(evt.type)
     {
-        sdl.SDL_EVENT_QUIT=> return error.RuntimeRequestQuit,
+        sdl.SDL_EVENT_QUIT=> return .stop,
         sdl.SDL_EVENT_KEY_DOWN=>
         {
             if(evt.key.key == sdl.SDLK_ESCAPE)
-            { return error.RuntimeRequestQuit; }
+            { return .stop; }
 
             if(evt.key.key == sdl.SDLK_1)
             { app.display_obj= app.triangle; }
@@ -136,14 +136,16 @@ pub fn appEvent(app: *App, evt: sdl.SDL_Event) anyerror!void
         },
         else=>{},
     }
+
+    return .pass;
 }
 
-pub fn appIterate(app: *App) anyerror!void
+pub fn appIterate(app: *App) anyerror!bool
 {
     gl.glClear(gl.GL_COLOR_BUFFER_BIT);
 
     gl.glUseProgram(app.shader_program.id);
     app.display_obj.draw();
-    
-    _=sdl.SDL_GL_SwapWindow(app.window.screen);
+
+    return true;
 }

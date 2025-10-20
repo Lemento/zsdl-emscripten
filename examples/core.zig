@@ -292,19 +292,25 @@ pub fn compileShader(shader_source: []const [*:0]const u8, shaderType: u32) !u32
 pub const InitResult= struct
 {
     pub const Error= error{SDL};
-    screen: *sdl.SDL_Window,
-    screen_width: u32,
-    screen_height: u32,
-    glContext: sdl.SDL_GLContext,
+    win: *sdl.SDL_Window,
+    win_width: u32,
+    win_height: u32,
+    glx: sdl.SDL_GLContext,
 
     pub fn show(this: InitResult) Error!void
     {
-        if(sdl.SDL_ShowWindow(this.screen) == false)
+        if(sdl.SDL_ShowWindow(this.win) == false)
+        { return error.SDL; }
+    }
+
+    pub fn refresh(this: InitResult) Error!void
+    {
+        if(sdl.SDL_GL_SwapWindow(this.win) == false)
         { return error.SDL; }
     }
 
     pub fn aspectRatio(this: InitResult) f32
-    { return @as(f32, @floatFromInt(this.screen_width)) / @as(f32, @floatFromInt(this.screen_height)); }
+    { return @as(f32, @floatFromInt(this.win_width)) / @as(f32, @floatFromInt(this.win_height)); }
 };
 
 pub const InitOptions= struct
@@ -336,16 +342,16 @@ fn setup(opt: InitOptions) InitResult.Error!InitResult
     errdefer sdl.SDL_Quit();
 
     const flags= sdl.SDL_WINDOW_HIDDEN | sdl.SDL_WINDOW_OPENGL;
-    const screen = sdl.SDL_CreateWindow(opt.title, opt.width, opt.height, flags)
+    const win = sdl.SDL_CreateWindow(opt.title, opt.width, opt.height, flags)
     orelse
     {
         std.log.err("Failed to create SDL_Window", .{});
         return error.SDL;
     };
-    errdefer sdl.SDL_DestroyWindow(screen);
+    errdefer sdl.SDL_DestroyWindow(win);
 
     // setup gl
-    const gl_ctx= sdl.SDL_GL_CreateContext(screen)
+    const gl_ctx= sdl.SDL_GL_CreateContext(win)
     orelse
     {
         std.log.err("Failed to create OpenGL context",.{});
@@ -371,13 +377,13 @@ fn setup(opt: InitOptions) InitResult.Error!InitResult
 
     gl.glViewport(0, 0, opt.width, opt.height);
 
-    return .{ .screen=screen, .screen_width= opt.width, .screen_height= opt.height, .glContext = gl_ctx, };
+    return .{ .win=win, .win_width= opt.width, .win_height= opt.height, .glx = gl_ctx, };
 }
 
 fn cleanup() void
 {
-    const gl_ctx= app_system.?.glContext;
-    const sdl_win= app_system.?.screen;
+    const gl_ctx= app_system.?.glx;
+    const sdl_win= app_system.?.win;
     app_system= null;
 
     _=sdl.SDL_GL_DestroyContext(gl_ctx);
@@ -389,13 +395,14 @@ const std = @import("std");
 const panic= std.debug.panic;
 const assert= std.debug.assert;
 
+pub const EventFlag= enum{ pass, stop };
 const App = @import("impl").App;
-comptime // A quick little interface enforcement run at compile time
+comptime // A quick little interface enforcement checked at compile time
 {
     assert(@TypeOf(@field(App, "init")) == fn(*App, InitResult) anyerror!void);
     assert(@TypeOf(@field(App, "quit")) == fn(*App) void);
-    assert(@TypeOf(@field(App, "event")) == fn(*App, sdl.SDL_Event) anyerror!void);
-    assert(@TypeOf(@field(App, "iterate")) == fn(*App) anyerror!void);
+    assert(@TypeOf(@field(App, "event")) == fn(*App, sdl.SDL_Event) EventFlag);
+    assert(@TypeOf(@field(App, "iterate")) == fn(*App) anyerror!bool);
 }
 const app_setup: InitOptions= App.setup;
 var app_status: ?anyerror= null;
@@ -456,7 +463,16 @@ fn mainLoop() callconv(.c) void
 
     var event: sdl.SDL_Event= undefined;
     while(sdl.SDL_PollEvent(&event))
-    { app.event(event) catch |err| { app_status=err; return; }; }
+    { if(app.event(event) == .stop){ app_status= error.RuntimeRequestQuit; } }
     
-    app.iterate() catch |err| { app_status=err; };
+    // Check if iterate wants to continue to drawing frame
+    if(app.iterate()) |drawFrame|
+    { if(drawFrame == false) return; }
+
+    // Or if it returned an error
+    else |err|
+    { app_status=err; }
+
+    if(sdl.SDL_GL_SwapWindow(app_system.?.win) == false)
+    { app_status= error.SDL; }
 }

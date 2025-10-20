@@ -116,15 +116,15 @@ pub fn appQuit(app: *App) void
     app.glPool.deinit();
 }
 
-pub fn appEvent(app: *App, evt: sdl.SDL_Event) anyerror!void
+pub fn appEvent(app: *App, evt: sdl.SDL_Event) core.EventFlag
 {
     switch(evt.type)
     {
-        sdl.SDL_EVENT_QUIT=> return error.RuntimeRequestQuit,
+        sdl.SDL_EVENT_QUIT=> return .stop,
         sdl.SDL_EVENT_KEY_DOWN,sdl.SDL_EVENT_KEY_UP=>
         {
             if(evt.key.key == sdl.SDLK_ESCAPE)
-            { return error.RuntimeRequestQuit; }
+            { return .stop; }
         
             const pressed= (evt.type==sdl.SDL_EVENT_KEY_DOWN);
             switch(evt.key.key)
@@ -157,10 +157,12 @@ pub fn appEvent(app: *App, evt: sdl.SDL_Event) anyerror!void
             }
         },else=>{},
     }
+
+    return .pass;
 }
 
 var transform= zm.identity();
-pub fn appIterate(app: *App) anyerror!void
+pub fn appIterate(app: *App) anyerror!bool
 {
     var move=zm.Vec{0.0,0.0,0.0,1.0};
     const vScale: zm.Vec=.{0.1, 0.1, 0.1, 1.0};
@@ -184,6 +186,6 @@ pub fn appIterate(app: *App) anyerror!void
     // move around the order of operations in the shader.
     gl.glUniformMatrix4fv(app.shader_program.getUniformLocation("transform"), 1, gl.GL_TRUE, &transform[0][0]);
     app.triangle.draw();
-    
-    _=sdl.SDL_GL_SwapWindow(app.window.screen);
+
+    return true;
 }

@@ -144,15 +144,15 @@ pub fn appQuit(app: *App) void
     app.glPool.deinit();
 }
 
-pub fn appEvent(app: *App, evt: sdl.SDL_Event) anyerror!void
+pub fn appEvent(app: *App, evt: sdl.SDL_Event) core.EventFlag
 {
     switch(evt.type)
     {
-        sdl.SDL_EVENT_QUIT=> return error.RuntimeRequestQuit,
+        sdl.SDL_EVENT_QUIT=> return .stop,
         sdl.SDL_EVENT_KEY_DOWN,sdl.SDL_EVENT_KEY_UP=>
         {
             if(evt.key.key == sdl.SDLK_ESCAPE)
-            { return error.RuntimeRequestQuit; }
+            { return .stop; }
         
             const pressed= (evt.type == sdl.SDL_EVENT_KEY_DOWN);
             switch(evt.key.key)
@@ -166,11 +166,13 @@ pub fn appEvent(app: *App, evt: sdl.SDL_Event) anyerror!void
         },
         else=>{},
     }
+
+    return .pass;
 }
 
 var mainCamera= FPSCamera.init(0.0,0.0,3.0,-90.0,0.0);
 
-pub fn appIterate(app: *App) anyerror!void
+pub fn appIterate(app: *App) anyerror!bool
 {
     var travelSpeed: f32=0.0;
     if(app.press_up)
@@ -194,8 +196,8 @@ pub fn appIterate(app: *App) anyerror!void
     app.shader_program.use();
     gl.glUniformMatrix4fv(app.shader_mvp, 1, gl.GL_TRUE, &mat_mvp[0][0]);
     app.triangle.draw();
-    
-    _=sdl.SDL_GL_SwapWindow(app.window.screen);
+
+    return true;
 }
 
 const cos= std.math.cos;

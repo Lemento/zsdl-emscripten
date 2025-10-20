@@ -155,22 +155,23 @@ pub fn appQuit(app: *App) void
     app.glPool.deinit();
 }
 
-pub fn appEvent(app: *App, evt: sdl.SDL_Event) anyerror!void
+pub fn appEvent(_: *App, evt: sdl.SDL_Event) core.EventFlag
 {
-    _=&app;
     switch(evt.type)
     {
-        sdl.SDL_EVENT_QUIT=> return error.RuntimeRequestQuit,
+        sdl.SDL_EVENT_QUIT=> return .stop,
         sdl.SDL_EVENT_KEY_DOWN=>
         {
             if(evt.key.key == sdl.SDLK_ESCAPE)
-            { return error.RuntimeRequestQuit; }
+            { return .stop; }
         },
         else=>{},
     }
+
+    return .pass;
 }
 
-pub fn appIterate(app: *App) anyerror!void
+pub fn appIterate(app: *App) anyerror!bool
 {
     gl.glClear(gl.GL_COLOR_BUFFER_BIT);
 
@@ -178,6 +179,6 @@ pub fn appIterate(app: *App) anyerror!void
     gl.glActiveTexture(gl.GL_TEXTURE0);
     gl.glBindTexture(gl.GL_TEXTURE_2D, app.texID);
     app.textured.draw();
-    
-    _=sdl.SDL_GL_SwapWindow(app.window.screen);
+
+    return true;
 }
