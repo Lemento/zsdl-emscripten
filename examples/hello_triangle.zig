@@ -45,6 +45,7 @@ pub const App= struct{
     display_obj: Mesh.Object = undefined,
     glPool: GLPool= .empty,
 
+    pub const setup= setupOptions;
     pub const init= appInit;
     pub const quit= appQuit;
     pub const event= appEvent;
@@ -54,9 +55,16 @@ pub const App= struct{
 const WINDOW_WIDTH:  i32= 600;
 const WINDOW_HEIGHT: i32= 600;
 
-pub fn appInit(app: *App) !void
+const setupOptions= core.InitOptions
 {
-    app.window= try core.initSDLandOpenGL("hello_triangle", WINDOW_WIDTH, WINDOW_HEIGHT, .{ .bgColor=.{0.0,0.0,0.0}});
+  .title="hello_triangle",
+  .width=@intCast(WINDOW_WIDTH),
+  .height=@intCast(WINDOW_HEIGHT),
+  .bgColor=.{0.0,0.0,0.0},
+};
+pub fn appInit(app: *App, system: core.InitResult) anyerror!void
+{
+    app.window= system;
 
     try app.glPool.init(gpa.allocator());
     errdefer app.glPool.deinit();
@@ -96,7 +104,7 @@ pub fn appInit(app: *App) !void
     const mSquare= Mesh.create(.OnlyPosition, &vSquare, &eSquare);
     app.square= try Mesh.createObject(mSquare, &app.glPool);
     
-    _=sdl.SDL_ShowWindow(app.window.screen);
+    try app.window.show();
 }
 
 pub fn appQuit(app: *App) void
@@ -109,13 +117,9 @@ pub fn appQuit(app: *App) void
     };
 
     app.glPool.deinit();
-
-    _=sdl.SDL_GL_DestroyContext(app.window.glContext);
-    sdl.SDL_DestroyWindow(app.window.screen);
-    sdl.SDL_Quit();
 }
 
-pub fn appEvent(app: *App, evt: sdl.SDL_Event) !void
+pub fn appEvent(app: *App, evt: sdl.SDL_Event) anyerror!void
 {
     switch(evt.type)
     {
@@ -134,7 +138,7 @@ pub fn appEvent(app: *App, evt: sdl.SDL_Event) !void
     }
 }
 
-pub fn appIterate(app: *App) !void
+pub fn appIterate(app: *App) anyerror!void
 {
     gl.glClear(gl.GL_COLOR_BUFFER_BIT);
 

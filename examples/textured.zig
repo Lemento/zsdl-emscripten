@@ -48,6 +48,7 @@ pub const App= struct{
     texID: gl.GLuint= undefined,
     glPool: GLPool= .empty,
 
+    pub const setup= appSetup;
     pub const init= appInit;
     pub const quit= appQuit;
     pub const event= appEvent;
@@ -57,10 +58,17 @@ pub const App= struct{
 const WINDOW_WIDTH:  i32= 600;
 const WINDOW_HEIGHT: i32= 600;
 
-pub fn appInit(app: *App) !void
+const appSetup= core.InitOptions
 {
-    app.window= try core.initSDLandOpenGL("hello_triangle", WINDOW_WIDTH, WINDOW_HEIGHT, .{ .bgColor=.{0.0,0.0,0.0}});
+    .title="textured",
+    .width=@intCast(WINDOW_WIDTH),
+    .height=@intCast(WINDOW_HEIGHT),
+    .bgColor= .{0.0,0.0,0.0},
+};
 
+pub fn appInit(app: *App, system: core.InitResult) anyerror!void
+{
+    app.window= system;
     try app.glPool.init(gpa.allocator());
     errdefer app.glPool.deinit();
 
@@ -72,6 +80,10 @@ pub fn appInit(app: *App) !void
     { GL_VERSION, @embedFile("texture.fs"), };
 
     app.shader_program = try app.glPool.genShader(&vertex_shader_source, &fragment_shader_source);
+
+    // set diffuse sampler early
+    app.shader_program.use();
+    gl.glUniform1i(app.shader_program.getUniformLocation("diffuse"), 0);
 
     const vTextured= [_]f32
     {
@@ -101,7 +113,7 @@ pub fn appInit(app: *App) !void
 
     app.texID= try loadImage(&app.glPool, "container.jpg");
 
-    _=sdl.SDL_ShowWindow(app.window.screen);
+    try app.window.show();
 }
 
 fn loadImage(pool: *GLPool, filename: [*:0]const u8) !gl.GLuint
@@ -112,8 +124,8 @@ fn loadImage(pool: *GLPool, filename: [*:0]const u8) !gl.GLuint
     const img: [*]u8= stb.stbi_load(filename, &img_x, &img_y, &img_n, 0).?;
     defer stb.stbi_image_free(img);
 
-    return try makeTextureFromRawData(pool, img, img_x, img_y, gl.GL_RGB);
-    
+    const format:u32= switch(img_n){ 3=>gl.GL_RGB, 4=>gl.GL_RGBA, else=> std.debug.panic("stb_image loaded image with n({d}) channels!", .{ img_n }), };
+    return try makeTextureFromRawData(pool, img, img_x, img_y, format);
 }
 
 fn makeTextureFromRawData(pool: *GLPool, img: [*]const u8, w: i32, h: i32, format: u32) !gl.GLuint
@@ -141,13 +153,9 @@ pub fn appQuit(app: *App) void
     };
 
     app.glPool.deinit();
-
-    _=sdl.SDL_GL_DestroyContext(app.window.glContext);
-    sdl.SDL_DestroyWindow(app.window.screen);
-    sdl.SDL_Quit();
 }
 
-pub fn appEvent(app: *App, evt: sdl.SDL_Event) !void
+pub fn appEvent(app: *App, evt: sdl.SDL_Event) anyerror!void
 {
     _=&app;
     switch(evt.type)
@@ -162,14 +170,13 @@ pub fn appEvent(app: *App, evt: sdl.SDL_Event) !void
     }
 }
 
-pub fn appIterate(app: *App) !void
+pub fn appIterate(app: *App) anyerror!void
 {
     gl.glClear(gl.GL_COLOR_BUFFER_BIT);
 
     app.shader_program.use();
     gl.glActiveTexture(gl.GL_TEXTURE0);
     gl.glBindTexture(gl.GL_TEXTURE_2D, app.texID);
-    gl.glUniform1i(app.shader_program.getUniformLocation("diffuse"), 0);
     app.textured.draw();
     
     _=sdl.SDL_GL_SwapWindow(app.window.screen);

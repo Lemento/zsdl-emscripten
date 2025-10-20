@@ -45,6 +45,8 @@ var gpa: core.Allocator= .init;
 pub const App= struct{
     window: core.InitResult= undefined,
 
+    moveDirV:f32=0.0,
+    moveDirH:f32=0.0,
     press_up: bool= false,
     press_down: bool= false,
     press_left: bool= false,
@@ -54,6 +56,7 @@ pub const App= struct{
     triangle: Object = undefined,
     glPool: GLPool= .empty,
 
+    pub const setup= appSetup;
     pub const init= appInit;
     pub const quit= appQuit;
     pub const event= appEvent;
@@ -63,10 +66,15 @@ pub const App= struct{
 const WINDOW_WIDTH:  i32= 600;
 const WINDOW_HEIGHT: i32= 600;
 
-pub fn appInit(app: *App) !void
+const appSetup= core.InitOptions
 {
-    app.window= try core.initSDLandOpenGL("hello_triangle", WINDOW_WIDTH, WINDOW_HEIGHT, .{});
+    .title="transforms",
+    .width=@intCast(WINDOW_WIDTH), .height=@intCast(WINDOW_HEIGHT),
+};
 
+pub fn appInit(app: *App, system: core.InitResult) anyerror!void
+{
+    app.window= system;
     try app.glPool.init(gpa.allocator());
     errdefer app.glPool.deinit();
 
@@ -78,16 +86,6 @@ pub fn appInit(app: *App) !void
     { GL_VERSION, @embedFile("basic.fs"), };
 
     app.shader_program = try app.glPool.genShader(&vertex_shader_source, &fragment_shader_source);
-
-    const transform= zm.identity();
-    gl.glUseProgram(app.shader_program.id);
-    // Reminder that opengl uses column-major matrices while
-    // zmath matrices are row-major, so in order for the math to stay 
-    // consistent you either tell opengl to transpose it by sending
-    // GL_TRUE, calculate the transposition earlier with zm.transpose, or
-    // move around the order of operations in the shader.
-    gl.glUniformMatrix4fv(gl.glGetUniformLocation(app.shader_program.id, "transform"), 1, gl.GL_FALSE, &transform[0][0]);
-    std.log.debug("Press Arrow keys for transform",.{});
 
     // triangle vertices
     const vTriangle= [_]f32
@@ -101,7 +99,8 @@ pub fn appInit(app: *App) !void
 
     app.triangle= try Mesh.createObject(mTriangle, &app.glPool);
     
-    _=sdl.SDL_ShowWindow(app.window.screen);
+    std.log.debug("Press Arrow keys for transform",.{});
+    try app.window.show();
 }
 
 pub fn appQuit(app: *App) void
@@ -115,64 +114,75 @@ pub fn appQuit(app: *App) void
 
     // Deallocate all memory here please
     app.glPool.deinit();
-
-    _=sdl.SDL_GL_DestroyContext(app.window.glContext);
-    sdl.SDL_DestroyWindow(app.window.screen);
-    sdl.SDL_Quit();
 }
 
-pub fn appEvent(app: *App, evt: sdl.SDL_Event) !void
+pub fn appEvent(app: *App, evt: sdl.SDL_Event) anyerror!void
 {
     switch(evt.type)
     {
         sdl.SDL_EVENT_QUIT=> return error.RuntimeRequestQuit,
-        sdl.SDL_EVENT_KEY_DOWN=>
+        sdl.SDL_EVENT_KEY_DOWN,sdl.SDL_EVENT_KEY_UP=>
         {
             if(evt.key.key == sdl.SDLK_ESCAPE)
             { return error.RuntimeRequestQuit; }
         
+            const pressed= (evt.type==sdl.SDL_EVENT_KEY_DOWN);
             switch(evt.key.key)
             {
-                sdl.SDLK_UP=> app.press_up= true,
-                sdl.SDLK_DOWN=> app.press_down= true,
-                sdl.SDLK_LEFT=> app.press_left= true,
-                sdl.SDLK_RIGHT=> app.press_right= true,
+                sdl.SDLK_UP=>
+                {
+                  app.press_up= pressed;
+                  if(pressed) app.moveDirV=1.0
+                  else if(app.press_down) app.moveDirV=-1.0;
+                },
+                sdl.SDLK_DOWN=>
+                {
+                  app.press_down= pressed;
+                  if(pressed) app.moveDirV=-1.0
+                  else if(app.press_up) app.moveDirV=1.0;
+                },
+                sdl.SDLK_LEFT=>
+                {
+                  app.press_left= pressed;
+                  if(pressed) app.moveDirH=-1.0
+                  else if(app.press_right) app.moveDirH=1.0;
+                },
+                sdl.SDLK_RIGHT=>
+                {
+                  app.press_right= pressed;
+                  if(pressed) app.moveDirH=1.0
+                  else if(app.press_left) app.moveDirH=-1.0;
+                },
                 else=>{},
             }
-        },
-        sdl.SDL_EVENT_KEY_UP=>
-        {
-            switch(evt.key.key)
-            {
-                sdl.SDLK_UP=>    app.press_up= false,
-                sdl.SDLK_DOWN=>  app.press_down= false,
-                sdl.SDLK_LEFT=>  app.press_left= false,
-                sdl.SDLK_RIGHT=> app.press_right= false,
-                else=>{},
-            }
-        },
-        else=>{},
+        },else=>{},
     }
 }
 
-pub fn appIterate(app: *App) !void
+var transform= zm.identity();
+pub fn appIterate(app: *App) anyerror!void
 {
-    var transform= zm.identity();
-    if(app.press_up)
-    { transform= zm.mul(transform, zm.translation(0, 1,0)); }
-    else if(app.press_down)
-    { transform= zm.mul(transform, zm.translation(0,-1,0)); }
+    var move=zm.Vec{0.0,0.0,0.0,1.0};
+    const vScale: zm.Vec=.{0.1, 0.1, 0.1, 1.0};
 
-    if(app.press_left)
-    { transform= zm.mul(transform, zm.translation(-1,0,0)); }
-    else if(app.press_right)
-    { transform= zm.mul(transform, zm.translation( 1,0,0)); }
+    if(app.press_up or app.press_down)
+    { move[1]= app.moveDirV; }
+
+    if(app.press_left or app.press_right)
+    { move[0]= app.moveDirH; }
+
+    transform= zm.mul(transform, zm.translationV(zm.normalize4(move)*vScale));
 
     gl.glClear(gl.GL_COLOR_BUFFER_BIT);
 
     gl.glUseProgram(app.shader_program.id);
 
-    gl.glUniformMatrix4fv(gl.glGetUniformLocation(app.shader_program.id, "transform"), 1, gl.GL_FALSE, &transform[0][0]);
+    // Reminder that opengl uses column-major matrices while
+    // zmath matrices are row-major, so in order for the math to stay 
+    // consistent you either tell opengl to transpose it by sending
+    // GL_TRUE, calculate the transposition earlier with zm.transpose, or
+    // move around the order of operations in the shader.
+    gl.glUniformMatrix4fv(app.shader_program.getUniformLocation("transform"), 1, gl.GL_TRUE, &transform[0][0]);
     app.triangle.draw();
     
     _=sdl.SDL_GL_SwapWindow(app.window.screen);

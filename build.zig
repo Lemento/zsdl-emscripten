@@ -12,8 +12,9 @@ const SOURCES =struct
 
 const EXAMPLES= struct {
     pub const hello_triangle= @import("examples/hello_triangle.zig");
-    pub const transformations= @import("examples/transformations.zig");
+    pub const transforms= @import("examples/transforms.zig");
     pub const textured= @import("examples/textured.zig");
+    pub const camera= @import("examples/camera.zig");
 };
 
 pub fn build(b: *std.Build) void
@@ -89,11 +90,8 @@ inline fn buildExe(b: *std.Build, name: []const u8, root_module: *std.Build.Modu
 
     const build_step= b.step(name, "Build '"++name++"' for desktop");
     build_step.dependOn(&install_exe.step);
-    // build_step.dependOn(b.getInstallStep());
-    // build_all_cmd.dependOn (&install_exe.step);
 
     const run_app = b.addRunArtifact(app_exe);
-    // run_app.step.dependOn(b.getInstallStep());
     run_app.step.dependOn(&install_exe.step);
     if (b.args) |args| run_app.addArgs(args);
 
@@ -207,7 +205,6 @@ inline fn buildWeb(b: *std.Build, name: []const u8, root_module: *std.Build.Modu
             .install_dir = .{ .custom = "www" },
             .install_subdir = "",
         }).step;
-        // b.getInstallStep().dependOn(link_step);
         b.step(name, "Build '"++name++"' for desktop").dependOn(install_www);
 
         const emsdk_cmd= switch(builtin.os.tag){ .windows=> "emsdk.bat", else=> "emsdk" };
@@ -241,10 +238,6 @@ fn emsdkAddIncludePath(b: *std.Build) std.Build.LazyPath
 {
     if (b.sysroot == null) {
         // injest sysroot as commandline argument for emcc
-        // const emsdk_path1 = b.run(&.{ "em-config", "CACHE" });
-        // const emsdk_path = emsdk_path1[0..emsdk_path1.len-2];
-
-        // const emsdk_sysroot = b.pathJoin(&.{ emsdk_path, "sysroot", });
         const emsdk_sysroot= b.pathJoin(&.{ emsdkPath(b, "upstream/emscripten/cache/sysroot") });
         b.sysroot = emsdk_sysroot;
     }

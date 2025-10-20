@@ -289,10 +289,29 @@ pub fn compileShader(shader_source: []const [*:0]const u8, shaderType: u32) !u32
     return program;
 }
 
-pub const InitResult= struct { screen: *sdl.SDL_Window, glContext: sdl.SDL_GLContext };
-
-const InitOptions= struct
+pub const InitResult= struct
 {
+    pub const Error= error{SDL};
+    screen: *sdl.SDL_Window,
+    screen_width: u32,
+    screen_height: u32,
+    glContext: sdl.SDL_GLContext,
+
+    pub fn show(this: InitResult) Error!void
+    {
+        if(sdl.SDL_ShowWindow(this.screen) == false)
+        { return error.SDL; }
+    }
+
+    pub fn aspectRatio(this: InitResult) f32
+    { return @as(f32, @floatFromInt(this.screen_width)) / @as(f32, @floatFromInt(this.screen_height)); }
+};
+
+pub const InitOptions= struct
+{
+    title: [*:0]const u8= "untitled",
+    width: u31, height: u31,
+
     /// Sets the starting background color for the window
     /// 
     /// By default, the color is a dull blue to make certain that SDL_GL functions are working
@@ -303,7 +322,10 @@ const InitOptions= struct
     setVSync: ?i32= null,
 };
 
-pub fn initSDLandOpenGL(title: [*:0]const u8, w: u31, h: u31, opt: InitOptions) !InitResult
+/// Setup SDL and OpenGL systems/contexts, pass handles to app.init.
+/// 
+/// Reminder that SDL_Window is set to hidden by default because I'm a crazy person and I like it when the window opens once the scene is ready to be drawn.
+fn setup(opt: InitOptions) InitResult.Error!InitResult
 {
     // Initialize SDL systems
     if(sdl.SDL_Init(sdl.SDL_INIT_VIDEO) == false)
@@ -313,7 +335,8 @@ pub fn initSDLandOpenGL(title: [*:0]const u8, w: u31, h: u31, opt: InitOptions) 
     }
     errdefer sdl.SDL_Quit();
 
-    const screen = sdl.SDL_CreateWindow(title, w, h, sdl.SDL_WINDOW_HIDDEN | sdl.SDL_WINDOW_OPENGL)
+    const flags= sdl.SDL_WINDOW_HIDDEN | sdl.SDL_WINDOW_OPENGL;
+    const screen = sdl.SDL_CreateWindow(opt.title, opt.width, opt.height, flags)
     orelse
     {
         std.log.err("Failed to create SDL_Window", .{});
@@ -332,9 +355,7 @@ pub fn initSDLandOpenGL(title: [*:0]const u8, w: u31, h: u31, opt: InitOptions) 
 
     // On web gl functions are given from emscripten
     if(PLATFORM==.NATIVE)
-    {
-        _=gl.gladLoadGLLoader(@ptrCast(&sdl.SDL_GL_GetProcAddress));
-    }
+    { _=gl.gladLoadGLLoader(@ptrCast(&sdl.SDL_GL_GetProcAddress)); }
 
     if(sdl.SDL_GL_SetAttribute(sdl.SDL_GL_CONTEXT_PROFILE_MASK, sdl.SDL_GL_CONTEXT_PROFILE_ES) == false)
     { std.log.err("Failed to set context profile!",.{}); }
@@ -348,13 +369,38 @@ pub fn initSDLandOpenGL(title: [*:0]const u8, w: u31, h: u31, opt: InitOptions) 
         { std.log.err("Failed to set VSync!",.{}); }
     }
 
-    gl.glViewport(0, 0, w, h);
+    gl.glViewport(0, 0, opt.width, opt.height);
 
-    return .{ .screen=screen, .glContext = gl_ctx, };
+    return .{ .screen=screen, .screen_width= opt.width, .screen_height= opt.height, .glContext = gl_ctx, };
+}
+
+fn cleanup() void
+{
+    const gl_ctx= app_system.?.glContext;
+    const sdl_win= app_system.?.screen;
+    app_system= null;
+
+    _=sdl.SDL_GL_DestroyContext(gl_ctx);
+    sdl.SDL_DestroyWindow(sdl_win);
+    sdl.SDL_Quit();
 }
 
 const std = @import("std");
 const panic= std.debug.panic;
+const assert= std.debug.assert;
+
+const App = @import("impl").App;
+comptime // A quick little interface enforcement run at compile time
+{
+    assert(@TypeOf(@field(App, "init")) == fn(*App, InitResult) anyerror!void);
+    assert(@TypeOf(@field(App, "quit")) == fn(*App) void);
+    assert(@TypeOf(@field(App, "event")) == fn(*App, sdl.SDL_Event) anyerror!void);
+    assert(@TypeOf(@field(App, "iterate")) == fn(*App) anyerror!void);
+}
+const app_setup: InitOptions= App.setup;
+var app_status: ?anyerror= null;
+var app_system: ?InitResult= null;
+var app= App{};
 
 const EmptyAllocator= struct
 {
@@ -367,13 +413,18 @@ pub const Allocator=
     if(PLATFORM==.NATIVE) std.heap.GeneralPurposeAllocator(.{})
     else EmptyAllocator;
 
-const App = @import("impl").App;
-var app_status: ?anyerror= null;
-var app= App{};
-
 pub fn main() void
 {
-    app.init() catch |err| { app_status=err; };
+    app_system= setup(app_setup)
+    catch |err|
+    {
+        switch(err)
+        {
+          error.SDL=> panic("SDL: {s}", .{sdl.SDL_GetError()}), 
+        //   else=> panic("{s}",.{@errorName(err)}),
+        }
+    };
+    app.init(app_system.?) catch |err| { app_status=err; };
 
     if(PLATFORM==.WEB)
     { emscripten.set_main_loop(mainLoop, 0, true); }
@@ -391,7 +442,11 @@ fn mainLoop() callconv(.c) void
             error.SDL=> panic("SDL: {s}", .{sdl.SDL_GetError()}),
             else=> panic("{s}", .{@errorName(status)}),
         }
-        app.quit();
+
+        // Have the app remove its own resources first
+        app.quit(); app= undefined;
+        // Then cleanup sdl and opengl stuff declared at setup
+        cleanup();
         
         if(PLATFORM==.WEB)
         { emscripten.cancel_main_loop(); }
