@@ -35,9 +35,9 @@ zig build run-nuklear_demo
 
     * ~~Transforms~~
 
-    * Textures
+    * ~~Textures~~
 
-    * Camera
+    * ~~Camera~~
 
     * Lighting
 
@@ -56,3 +56,5 @@ First got my start learning from [silbinarywolf](https://github.com/silbinarywol
 [zemscripten](https://github.com/zig-gamedev/zemscripten) provides a clean example for using emscripten
 
 [sdl3/README-emscripten](https://wiki.libsdl.org/SDL3/README-emscripten) Shows and explains how to structure your app so that it can be compiled to wasm.
+
+Makes use of [NuklearUI](https://github.com/Immediate-Mode-UI/Nuklear) for immediate mode ui rendering.
