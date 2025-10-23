@@ -10,26 +10,9 @@
 #include <limits.h>
 #include <time.h>
 
-
-#ifndef __EMSCRIPTEN__
-#include <glad/glad.h>
-#else
-#include <GLES3/gl3.h>
-#endif
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_opengl.h>
-
-#define NK_INCLUDE_FIXED_TYPES
-#define NK_INCLUDE_STANDARD_IO
-#define NK_INCLUDE_STANDARD_VARARGS
-#define NK_INCLUDE_DEFAULT_ALLOCATOR
-#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
-#define NK_INCLUDE_FONT_BAKING
-#define NK_INCLUDE_DEFAULT_FONT
 #define NK_IMPLEMENTATION
-#include "nuklear.h"
 #define NK_SDL_GL3_IMPLEMENTATION
-#include "nuklear_sdl_gl3.h"
+#include "nuklear_demo.h"
 
 #ifndef __EMSCRIPTEN__
 #define WINDOW_WIDTH 1200
@@ -104,14 +87,14 @@ struct nk_colorf bg;
 
 static void MainLoop(void* loopArg);
 
-int main(int argc, char *argv[])
+int run()
 {
     #ifdef INCLUDE_CONFIGURATOR
     memcpy(color_table, nk_default_color_style, sizeof(color_table));
     #endif
 
-    NK_UNUSED(argc);
-    NK_UNUSED(argv);
+    // NK_UNUSED(argc);
+    // NK_UNUSED(argv);
 
     /* SDL setup */
     // SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");

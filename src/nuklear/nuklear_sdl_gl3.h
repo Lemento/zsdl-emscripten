@@ -21,6 +21,7 @@ NK_API void                 nk_sdl_font_stash_begin(struct nk_font_atlas **atlas
 NK_API void                 nk_sdl_font_stash_end(void);
 NK_API int                  nk_sdl_handle_event(SDL_Event *evt);
 NK_API void                 nk_sdl_render(enum nk_anti_aliasing , int max_vertex_buffer, int max_element_buffer);
+NK_API void                 nk_sdl_render1(enum nk_anti_aliasing , size_t max_vertex_buffer, void* vertices, size_t max_element_buffer, void* elements);
 NK_API void                 nk_sdl_shutdown(void);
 NK_API void                 nk_sdl_device_destroy(void);
 NK_API void                 nk_sdl_device_create(void);
@@ -186,7 +187,7 @@ nk_sdl_device_destroy(void)
 }
 
 NK_API void
-nk_sdl_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element_buffer)
+nk_sdl_render1(enum nk_anti_aliasing AA, size_t max_vertex_buffer, void* vertices, size_t max_element_buffer, void* elements)
 {
     struct nk_sdl_device *dev = &sdl.ogl;
     int width, height;
@@ -226,12 +227,8 @@ nk_sdl_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element_b
     glUniform1i(dev->uniform_tex, 0);
     glUniformMatrix4fv(dev->uniform_proj, 1, GL_FALSE, &ortho[0][0]);
     {
-    void* vertex_buffer = malloc(max_vertex_buffer);
-    void* element_buffer = malloc(max_element_buffer);
-
         /* convert from command queue into draw list and draw to screen */
         const struct nk_draw_command *cmd;
-        void *vertices, *elements;
         const nk_draw_index *offset = NULL;
         struct nk_buffer vbuf, ebuf;
 
@@ -246,8 +243,6 @@ nk_sdl_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element_b
         /* load vertices/elements directly into vertex/element buffer */
         // vertices = glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
         // elements = glMapBuffer(GL_ELEMENT_ARRAY_BUFFER, GL_WRITE_ONLY);
-        vertices = vertex_buffer;
-        elements = element_buffer;
         {
             /* fill convert configuration */
             struct nk_convert_config config;
@@ -292,9 +287,6 @@ nk_sdl_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element_b
         }
         nk_clear(&sdl.ctx);
         nk_buffer_clear(&dev->cmds);
-
-        free(vertex_buffer);
-        free(element_buffer);
     }
 
     glUseProgram(0);
@@ -303,6 +295,18 @@ nk_sdl_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element_b
     glBindVertexArray(0);
     glDisable(GL_BLEND);
     glDisable(GL_SCISSOR_TEST);
+}
+
+NK_API void
+nk_sdl_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element_buffer)
+{
+    void* vertex_buffer = malloc(max_vertex_buffer);
+    void* element_buffer = malloc(max_element_buffer);
+
+    nk_sdl_render1(AA, max_vertex_buffer, vertex_buffer, max_element_buffer, element_buffer);
+
+    free(vertex_buffer);
+    free(element_buffer);
 }
 
 static void

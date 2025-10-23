@@ -73,7 +73,7 @@ inline fn buildExe(b: *std.Build, name: []const u8, root_module: *std.Build.Modu
     }
 
     root_module.addIncludePath(b.path("glad/include"));
-    root_module.addCSourceFile(.{ .file=b.path("glad/src/glad.c"), .flags=&.{ "-fno-sanitize=undefined" }});
+    root_module.addCSourceFile(.{ .file=b.path("glad/src/glad.c"), .flags=&.{ "-Wall", "-O3" }});
     const app_exe = b.addExecutable(.{
         .name = name,
         .root_module = root_module,
