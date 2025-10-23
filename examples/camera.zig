@@ -20,6 +20,16 @@ pub fn build(b: *std.Build, src_path: []const u8, opt:anytype) *std.Build.Module
         .root_source_file = b.path(src_path),
     });
 
+    { // Link Nuklear ui
+        core_mod.addSystemIncludePath(b.dependency("sdl",.{}).path("include"));
+    
+        const nk_dep= b.dependency("Nuklear",.{});
+        core_mod.addIncludePath(nk_dep.path(""));
+
+        core_mod.addIncludePath(b.path("src/nuklear"));
+
+        core_mod.addCSourceFile(.{.file=b.path("src/nuklear/nuklear_demo.c"), .flags=&.{ "-std=c99", "-Wall", "-Wno-format", "-fno-sanitize=undefined", }});
+    }
     core_mod.addImport("impl", impl_mod);
     impl_mod.addImport("core", core_mod);
 
@@ -40,6 +50,7 @@ const Object= Mesh.Object;
 
 const zm= @import("zmath");
 const rad= std.math.degreesToRadians;
+const deg= std.math.radiansToDegrees;
 
 var gpa: core.Allocator= .init;
 
@@ -172,6 +183,7 @@ pub fn appEvent(app: *App, evt: sdl.SDL_Event) core.EventFlag
 
 var mainCamera= FPSCamera.init(0.0,0.0,3.0,-90.0,0.0);
 
+const nk= core.nuklear;
 pub fn appIterate(app: *App) anyerror!bool
 {
     var travelSpeed: f32=0.0;
@@ -191,6 +203,22 @@ pub fn appIterate(app: *App) anyerror!bool
 
     const mat_mvp= mat_mul(&.{mat_model, mat_view, mat_proj});
 
+    //* GUI */
+    const ctx= app.window.nkx;
+    // TODO: Remove static open variable by replacing nk_begin with a function that passes the SourceLocation (@src) of where the function is called
+    // This is because nk_begin keeps track of its windows using the file name/line macros where the function is called.
+    const ui_win= struct
+    { var open= true; };
+    ui_win.open= (nk.nk_begin(app.window.nkx, "FPSCamera", nk.nk_rect(5, 5, 230, 250),
+        nk.NK_WINDOW_BORDER|nk.NK_WINDOW_MOVABLE|nk.NK_WINDOW_SCALABLE |
+        nk.NK_WINDOW_MINIMIZABLE|nk.NK_WINDOW_TITLE) == 1);
+    if(ui_win.open)
+    {
+        nk.nk_layout_row_dynamic(ctx, 22.0, 1);
+        nk.nk_labelf(ctx, nk.NK_TEXT_LEFT, "eyepos: %3.2f, %3.2f, %3.2f", mainCamera.position[0], mainCamera.position[1], mainCamera.position[2]);
+        nk.nk_labelf(ctx, nk.NK_TEXT_LEFT, "viewangle: %3.2f, %3.2f", deg(mainCamera.yawRad), deg(mainCamera.pitchRad));
+    }
+    nk.nk_end(ctx);
     gl.glClear(gl.GL_COLOR_BUFFER_BIT);
 
     app.shader_program.use();

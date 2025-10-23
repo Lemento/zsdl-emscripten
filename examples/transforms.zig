@@ -20,6 +20,17 @@ pub fn build(b: *std.Build, src_path: []const u8, opt:anytype) *std.Build.Module
         .root_source_file = b.path(src_path),
     });
 
+    { // Link Nuklear ui
+        core_mod.addSystemIncludePath(b.dependency("sdl",.{}).path("include"));
+    
+        const nk_dep= b.dependency("Nuklear",.{});
+        core_mod.addIncludePath(nk_dep.path(""));
+
+        core_mod.addIncludePath(b.path("src/nuklear"));
+
+        core_mod.addCSourceFile(.{.file=b.path("src/nuklear/nuklear_demo.c"), .flags=&.{ "-std=c99", "-Wall", "-Wno-format", "-fno-sanitize=undefined", }});
+    }
+
     core_mod.addImport("impl", impl_mod);
     impl_mod.addImport("core", core_mod);
 
@@ -70,6 +81,7 @@ const appSetup= core.InitOptions
 {
     .title="transforms",
     .width=@intCast(WINDOW_WIDTH), .height=@intCast(WINDOW_HEIGHT),
+    .setVSync= -1,
 };
 
 pub fn appInit(app: *App, system: core.InitResult) anyerror!void
@@ -161,6 +173,7 @@ pub fn appEvent(app: *App, evt: sdl.SDL_Event) core.EventFlag
     return .pass;
 }
 
+const nk= core.nuklear;
 var transform= zm.identity();
 pub fn appIterate(app: *App) anyerror!bool
 {
@@ -174,7 +187,25 @@ pub fn appIterate(app: *App) anyerror!bool
     { move[0]= app.moveDirH; }
 
     transform= zm.mul(transform, zm.translationV(zm.normalize4(move)*vScale));
-
+    
+    {
+        const ui_win= struct
+        {
+            var open= true;
+        };
+        const ctx= app.window.nkx;
+        //* GUI */
+        ui_win.open= (nk.nk_begin(app.window.nkx, "Demo", nk.nk_rect(5, 5, 230, 250),
+            nk.NK_WINDOW_BORDER|nk.NK_WINDOW_MOVABLE|nk.NK_WINDOW_SCALABLE |
+            nk.NK_WINDOW_MINIMIZABLE|nk.NK_WINDOW_TITLE) == 1);
+        if(ui_win.open)
+        {
+            nk.nk_layout_row_dynamic(ctx, 22.0, 1);
+            nk.nk_labelf(ctx, nk.NK_TEXT_LEFT, "triangle[%3.2f, %3.2f, %3.2f]", transform[3][0], transform[3][1], transform[3][2]);
+        }
+        nk.nk_end(ctx);
+    }
+    
     gl.glClear(gl.GL_COLOR_BUFFER_BIT);
 
     gl.glUseProgram(app.shader_program.id);

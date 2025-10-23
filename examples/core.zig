@@ -22,6 +22,8 @@ pub const gl =
     else
         @cImport(@cInclude("GLES3/gl3.h"));
 
+pub const nuklear= @cImport(@cInclude("nuklear_demo.h"));
+
 const GLuint= gl.GLuint;
 
 pub const emscripten= struct{
@@ -296,6 +298,7 @@ pub const InitResult= struct
     win_width: u32,
     win_height: u32,
     glx: sdl.SDL_GLContext,
+    nkx: *nuklear.nk_context,
 
     pub fn show(this: InitResult) Error!void
     {
@@ -341,7 +344,7 @@ fn setup(opt: InitOptions) InitResult.Error!InitResult
     }
     errdefer sdl.SDL_Quit();
 
-    const flags= sdl.SDL_WINDOW_HIDDEN | sdl.SDL_WINDOW_OPENGL;
+    const flags= sdl.SDL_WINDOW_HIDDEN | sdl.SDL_WINDOW_OPENGL | sdl.SDL_WINDOW_HIGH_PIXEL_DENSITY;
     const win = sdl.SDL_CreateWindow(opt.title, opt.width, opt.height, flags)
     orelse
     {
@@ -363,11 +366,12 @@ fn setup(opt: InitOptions) InitResult.Error!InitResult
     if(PLATFORM==.NATIVE)
     { _=gl.gladLoadGLLoader(@ptrCast(&sdl.SDL_GL_GetProcAddress)); }
 
-    if(sdl.SDL_GL_SetAttribute(sdl.SDL_GL_CONTEXT_PROFILE_MASK, sdl.SDL_GL_CONTEXT_PROFILE_ES) == false)
+    if(!sdl.SDL_GL_SetAttribute (sdl.SDL_GL_CONTEXT_FLAGS, sdl.SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG)
+        or
+       !sdl.SDL_GL_SetAttribute(sdl.SDL_GL_CONTEXT_PROFILE_MASK, sdl.SDL_GL_CONTEXT_PROFILE_ES))
     { std.log.err("Failed to set context profile!",.{}); }
     if(sdl.SDL_GL_SetAttribute(sdl.SDL_GL_DOUBLEBUFFER, 1) == false)
     { std.log.err("Failed to set doublebuffer!",.{}); }
-    @call(.auto, gl.glClearColor, opt.bgColor++.{1.0});
     
     if(opt.setVSync) |interval|
     {
@@ -375,9 +379,27 @@ fn setup(opt: InitOptions) InitResult.Error!InitResult
         { std.log.err("Failed to set VSync!",.{}); }
     }
 
+    @call(.auto, gl.glClearColor, opt.bgColor++.{1.0});
     gl.glViewport(0, 0, opt.width, opt.height);
 
-    return .{ .win=win, .win_width= opt.width, .win_height= opt.height, .glx = gl_ctx, };
+    const nk_ctx = nuklear.nk_sdl_init(@ptrCast(win))
+    orelse @panic("Failed to create Nuklear context!");
+    //* Load Fonts: if none of these are loaded a default font will be used  */
+    //* Load Cursor: if you uncomment cursor loading please hide the cursor */
+    {var atlas: [*c]nuklear.struct_nk_font_atlas= null;
+    nuklear.nk_sdl_font_stash_begin(&atlas);
+    //*struct nk_font *droid = nk_font_atlas_add_from_file(atlas, "../../../extra_font/DroidSans.ttf", 14, 0);*/
+    //*struct nk_font *roboto = nk_font_atlas_add_from_file(atlas, "../../../extra_font/Roboto-Regular.ttf", 16, 0);*/
+    //*struct nk_font *future = nk_font_atlas_add_from_file(atlas, "../../../extra_font/kenvector_future_thin.ttf", 13, 0);*/
+    //*struct nk_font *clean = nk_font_atlas_add_from_file(atlas, "../../../extra_font/ProggyClean.ttf", 12, 0);*/
+    //*struct nk_font *tiny = nk_font_atlas_add_from_file(atlas, "../../../extra_font/ProggyTiny.ttf", 10, 0);*/
+    //*struct nk_font *cousine = nk_font_atlas_add_from_file(atlas, "../../../extra_font/Cousine-Regular.ttf", 13, 0);*/
+    nuklear.nk_sdl_font_stash_end();
+    //*nk_style_load_all_cursors(ctx, atlas->cursors);*/
+    //*nk_style_set_font(ctx, &roboto->handle);*/
+    }
+
+    return .{ .win=win, .win_width= opt.width, .win_height= opt.height, .glx = gl_ctx, .nkx= nk_ctx, };
 }
 
 fn cleanup() void
@@ -439,6 +461,10 @@ pub fn main() void
     { while(true){ mainLoop(); } }
 }
 
+
+const MAX_VERTEX_MEMORY= 512 * 1024;
+const MAX_ELEMENT_MEMORY= 128 * 1024;
+
 fn mainLoop() callconv(.c) void
 {
     if(app_status) |status|
@@ -462,9 +488,18 @@ fn mainLoop() callconv(.c) void
     }
 
     var event: sdl.SDL_Event= undefined;
-    while(sdl.SDL_PollEvent(&event))
-    { if(app.event(event) == .stop){ app_status= error.RuntimeRequestQuit; } }
-    
+    nuklear.nk_input_begin(app_system.?.nkx);
+    while (sdl.SDL_PollEvent(&event))
+    {
+        if(nuklear.nk_sdl_handle_event(@ptrCast(&event)) == 0)
+        { continue; }
+
+        if(app.event(event) == .stop)
+        { app_status= error.RuntimeRequestQuit; }
+    }
+    nuklear.nk_sdl_handle_grab(); //* optional grabbing behavior */
+    nuklear.nk_input_end(app_system.?.nkx);
+
     // Check if iterate wants to continue to drawing frame
     if(app.iterate()) |drawFrame|
     { if(drawFrame == false) return; }
@@ -472,6 +507,20 @@ fn mainLoop() callconv(.c) void
     // Or if it returned an error
     else |err|
     { app_status=err; }
+
+    { // when drawing nuklear-ui, switch to gl context setup by nuklear, then switch back
+        const cur_ctx= sdl.SDL_GL_GetCurrentContext().?;
+        defer if(sdl.SDL_GL_MakeCurrent(app_system.?.win, cur_ctx) == false) unreachable;
+
+        // draw nuklear ui
+        //* IMPORTANT: `nk_sdl_render` modifies some global OpenGL state
+        //* with blending, scissor, face culling, depth test and viewport and
+        //* defaults everything back into a default state.
+        //* Make sure to either a.) save and restore or b.) reset your own state after
+        //* rendering the UI. */
+        _=sdl.SDL_GL_MakeCurrent(app_system.?.win, app_system.?.glx);
+        nuklear.nk_sdl_render(nuklear.NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
+    }
 
     if(sdl.SDL_GL_SwapWindow(app_system.?.win) == false)
     { app_status= error.SDL; }

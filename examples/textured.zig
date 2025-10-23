@@ -14,6 +14,16 @@ pub fn build(b: *std.Build, src_path: []const u8, opt:anytype) *std.Build.Module
         .link_libc = true,
     });
     
+    {
+        core_mod.addSystemIncludePath(b.dependency("sdl",.{}).path("include"));
+    
+        const nk_dep= b.dependency("Nuklear",.{});
+        core_mod.addIncludePath(nk_dep.path(""));
+
+        core_mod.addIncludePath(b.path("src/nuklear"));
+
+        core_mod.addCSourceFile(.{.file=b.path("src/nuklear/nuklear_demo.c"), .flags=&.{ "-std=c99", "-Wall", "-Wno-format", "-fno-sanitize=undefined", }});
+    }
     core_mod.addIncludePath(b.path("examples"));
     core_mod.addCSourceFile(.{ .file=b.path("examples/stb_image.c"), .flags=&.{ "-std=c89", "-Wall", }});
 
