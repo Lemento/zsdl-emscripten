@@ -51,7 +51,7 @@ const stb= core.stb_image;
 var gpa: core.Allocator= .init;
 
 pub const App= struct{
-    window: core.InitResult= undefined,
+    window: core.SetupResult= undefined,
 
     shader_program: core.GLShader = undefined,
     textured: Mesh.Object = undefined,
@@ -68,7 +68,7 @@ pub const App= struct{
 const WINDOW_WIDTH:  i32= 600;
 const WINDOW_HEIGHT: i32= 600;
 
-const appSetup= core.InitOptions
+const appSetup= core.SetupOptions
 {
     .title="textured",
     .width=@intCast(WINDOW_WIDTH),
@@ -76,7 +76,7 @@ const appSetup= core.InitOptions
     .bgColor= .{0.0,0.0,0.0},
 };
 
-pub fn appInit(app: *App, system: core.InitResult) anyerror!void
+pub fn appInit(app: *App, system: core.SetupResult) anyerror!void
 {
     app.window= system;
     try app.glPool.init(gpa.allocator());

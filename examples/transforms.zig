@@ -54,7 +54,7 @@ const zm = @import("zmath");
 var gpa: core.Allocator= .init;
 
 pub const App= struct{
-    window: core.InitResult= undefined,
+    window: core.SetupResult= undefined,
 
     moveDirV:f32=0.0,
     moveDirH:f32=0.0,
@@ -77,14 +77,14 @@ pub const App= struct{
 const WINDOW_WIDTH:  i32= 600;
 const WINDOW_HEIGHT: i32= 600;
 
-const appSetup= core.InitOptions
+const appSetup= core.SetupOptions
 {
     .title="transforms",
     .width=@intCast(WINDOW_WIDTH), .height=@intCast(WINDOW_HEIGHT),
     .setVSync= -1,
 };
 
-pub fn appInit(app: *App, system: core.InitResult) anyerror!void
+pub fn appInit(app: *App, system: core.SetupResult) anyerror!void
 {
     app.window= system;
     try app.glPool.init(gpa.allocator());

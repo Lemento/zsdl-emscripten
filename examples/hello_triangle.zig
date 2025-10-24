@@ -14,6 +14,17 @@ pub fn build(b: *std.Build, src_path: []const u8, opt:anytype) *std.Build.Module
         .link_libc = true,
     });
 
+    {
+        core_mod.addSystemIncludePath(b.dependency("sdl",.{}).path("include"));
+    
+        const nk_dep= b.dependency("Nuklear",.{});
+        core_mod.addIncludePath(nk_dep.path(""));
+
+        core_mod.addIncludePath(b.path("src/nuklear"));
+
+        core_mod.addCSourceFile(.{.file=b.path("src/nuklear/nuklear_demo.c"), .flags=&.{ "-std=c99", "-Wall", "-Wno-format", "-fno-sanitize=undefined", }});
+    }
+    
     const impl_mod= b.createModule(.{
         .target=opt.target,
         .optimize=opt.optimize,
@@ -37,7 +48,7 @@ const Mesh= core.Mesh;
 var gpa: core.Allocator= .init;
 
 pub const App= struct{
-    window: core.InitResult= undefined,
+    window: core.SetupResult= undefined,
 
     shader_program: core.GLShader = undefined,
     triangle: Mesh.Object = undefined,
@@ -55,14 +66,14 @@ pub const App= struct{
 const WINDOW_WIDTH:  i32= 600;
 const WINDOW_HEIGHT: i32= 600;
 
-const setupOptions= core.InitOptions
+const setupOptions= core.SetupOptions
 {
   .title="hello_triangle",
   .width=@intCast(WINDOW_WIDTH),
   .height=@intCast(WINDOW_HEIGHT),
   .bgColor=.{0.0,0.0,0.0},
 };
-pub fn appInit(app: *App, system: core.InitResult) anyerror!void
+pub fn appInit(app: *App, system: core.SetupResult) anyerror!void
 {
     app.window= system;
 

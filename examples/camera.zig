@@ -53,11 +53,22 @@ const zm= @import("zmath");
 const rad= std.math.degreesToRadians;
 const deg= std.math.radiansToDegrees;
 
-var gpa: core.Allocator= .init;
+var mat_proj= zm.identity();
+var mat_view= zm.identity();
+var mat_model= zm.identity();
+
+inline fn mat_mul(matrices: []const zm.Mat) zm.Mat
+{
+    var product: zm.Mat= zm.identity();
+    for(matrices) |m|
+    { product= zm.mul(product, m); }
+
+    return product;
+}
 
 pub const App= struct
 {
-    window: core.InitResult= undefined,
+    window: core.SetupResult= undefined,
 
     mainCamera: FPSCamera= .init(0.0,0.0,3.0, -90.0,0.0),
     press_up: bool= false,
@@ -81,26 +92,13 @@ pub const App= struct
 const WINDOW_WIDTH:  i32= 600;
 const WINDOW_HEIGHT: i32= 600;
 
-const appSetup= core.InitOptions
+const appSetup= core.SetupOptions
 {
     .title= "camera",
     .width= @intCast(WINDOW_WIDTH),
     .height= @intCast(WINDOW_HEIGHT),
     .setVSync= -1,
 };
-
-var mat_proj= zm.identity();
-var mat_view= zm.identity();
-var mat_model= zm.identity();
-
-inline fn mat_mul(matrices: []const zm.Mat) zm.Mat
-{
-    var product: zm.Mat= zm.identity();
-    for(matrices) |m|
-    { product= zm.mul(product, m); }
-
-    return product;
-}
 
 //* GUI */
 fn update_ui(app: *const App) void
@@ -124,7 +122,9 @@ fn update_ui(app: *const App) void
     nk.nk_end(ctx);
 }
 
-pub fn appInit(app: *App, system: core.InitResult) anyerror!void
+var gpa: core.Allocator= .init;
+
+pub fn appInit(app: *App, system: core.SetupResult) anyerror!void
 {
     app.window= system;
 

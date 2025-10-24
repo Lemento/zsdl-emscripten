@@ -318,7 +318,7 @@ pub fn makeTextureFromRawData(pool: *GLPool, img: [*]const u8, w: i32, h: i32, f
     return nTexture;
 }
 
-pub const InitResult= struct
+pub const SetupResult= struct
 {
     pub const Error= error{SDL};
     win: *sdl.SDL_Window,
@@ -327,23 +327,23 @@ pub const InitResult= struct
     glx: sdl.SDL_GLContext,
     nkx: *nuklear.nk_context,
 
-    pub fn show(this: InitResult) Error!void
+    pub fn show(this: SetupResult) Error!void
     {
         if(sdl.SDL_ShowWindow(this.win) == false)
         { return error.SDL; }
     }
 
-    pub fn refresh(this: InitResult) Error!void
+    pub fn refresh(this: SetupResult) Error!void
     {
         if(sdl.SDL_GL_SwapWindow(this.win) == false)
         { return error.SDL; }
     }
 
-    pub fn aspectRatio(this: InitResult) f32
+    pub fn aspectRatio(this: SetupResult) f32
     { return @as(f32, @floatFromInt(this.win_width)) / @as(f32, @floatFromInt(this.win_height)); }
 };
 
-pub const InitOptions= struct
+pub const SetupOptions= struct
 {
     title: [*:0]const u8= "untitled",
     width: u31, height: u31,
@@ -361,7 +361,7 @@ pub const InitOptions= struct
 /// Setup SDL and OpenGL systems/contexts, pass handles to app.init.
 /// 
 /// Reminder that SDL_Window is set to hidden by default because I'm a crazy person and I like it when the window opens once the scene is ready to be drawn.
-fn setup(opt: InitOptions) InitResult.Error!InitResult
+fn setup(opt: SetupOptions) SetupResult.Error!SetupResult
 {
     // Initialize SDL systems
     if(sdl.SDL_Init(sdl.SDL_INIT_VIDEO) == false)
@@ -448,14 +448,14 @@ pub const EventFlag= enum{ pass, stop };
 const App = @import("impl").App;
 comptime // A quick little interface enforcement checked at compile time
 {
-    assert(@TypeOf(@field(App, "init")) == fn(*App, InitResult) anyerror!void);
+    assert(@TypeOf(@field(App, "init")) == fn(*App, SetupResult) anyerror!void);
     assert(@TypeOf(@field(App, "quit")) == fn(*App) void);
     assert(@TypeOf(@field(App, "event")) == fn(*App, sdl.SDL_Event) EventFlag);
     assert(@TypeOf(@field(App, "iterate")) == fn(*App) anyerror!bool);
 }
-const app_setup: InitOptions= App.setup;
+const app_setup: SetupOptions= App.setup;
 var app_status: ?anyerror= null;
-var app_system: ?InitResult= null;
+var app_system: ?SetupResult= null;
 var app= App{};
 
 const EmptyAllocator= struct
