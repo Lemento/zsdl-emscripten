@@ -97,7 +97,6 @@ pub fn appInit(app: *App, system: core.InitResult) anyerror!void
 
     const vTextured= [_]f32
     {
-      // first triangle
       0.5,  0.5, 0.0, 1.0, 1.0,  // top right
       0.5, -0.5, 0.0, 1.0, 0.0,  // bottom right
      -0.5, -0.5, 0.0, 0.0, 0.0,  // bottom left
@@ -121,36 +120,9 @@ pub fn appInit(app: *App, system: core.InitResult) anyerror!void
         try dir.setAsCwd();
     }
 
-    app.texID= try loadImage(&app.glPool, "container.jpg");
+    app.texID= try core.loadImage(&app.glPool, "container.jpg");
 
     try app.window.show();
-}
-
-fn loadImage(pool: *GLPool, filename: [*:0]const u8) !gl.GLuint
-{
-    var img_x:i32=0;
-    var img_y:i32=0;
-    var img_n:i32=0;
-    const img: [*]u8= stb.stbi_load(filename, &img_x, &img_y, &img_n, 0).?;
-    defer stb.stbi_image_free(img);
-
-    const format:u32= switch(img_n){ 3=>gl.GL_RGB, 4=>gl.GL_RGBA, else=> std.debug.panic("stb_image loaded image with n({d}) channels!", .{ img_n }), };
-    return try makeTextureFromRawData(pool, img, img_x, img_y, format);
-}
-
-fn makeTextureFromRawData(pool: *GLPool, img: [*]const u8, w: i32, h: i32, format: u32) !gl.GLuint
-{
-    const nTexture= try pool.genTexture();
-    gl.glBindTexture(gl.GL_TEXTURE_2D, nTexture);
-
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, gl.GL_REPEAT);
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, gl.GL_REPEAT);
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST);
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR);
-
-    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, @intCast(format), w, h, 0, format, gl.GL_UNSIGNED_BYTE, img);
-
-    return nTexture;
 }
 
 pub fn appQuit(app: *App) void

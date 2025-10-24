@@ -6,7 +6,7 @@ pub const PLATFORM =
     if(builtin.os.tag == .emscripten or builtin.os.tag == .wasi)
         .WEB else .NATIVE;
 
-pub const sdl = @cImport
+pub const sdl= @cImport
 ({
     @cInclude("SDL3/SDL.h");
     @cInclude("SDL3/SDL_revision.h");
@@ -291,6 +291,33 @@ pub fn compileShader(shader_source: []const [*:0]const u8, shaderType: u32) !u32
     return program;
 }
 
+pub fn loadImage(pool: *GLPool, filename: [*:0]const u8) !gl.GLuint
+{
+    var img_x:i32=0;
+    var img_y:i32=0;
+    var img_n:i32=0;
+    const img: [*]u8= stb_image.stbi_load(filename, &img_x, &img_y, &img_n, 0).?;
+    defer stb_image.stbi_image_free(img);
+
+    const format:u32= switch(img_n){ 3=>gl.GL_RGB, 4=>gl.GL_RGBA, else=> std.debug.panic("stb_image loaded image with n({d}) channels!", .{ img_n }), };
+    return try makeTextureFromRawData(pool, img, img_x, img_y, format);
+}
+
+pub fn makeTextureFromRawData(pool: *GLPool, img: [*]const u8, w: i32, h: i32, format: u32) !gl.GLuint
+{
+    const nTexture= try pool.genTexture();
+    gl.glBindTexture(gl.GL_TEXTURE_2D, nTexture);
+
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, gl.GL_REPEAT);
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, gl.GL_REPEAT);
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST);
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR);
+
+    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, @intCast(format), w, h, 0, format, gl.GL_UNSIGNED_BYTE, img);
+
+    return nTexture;
+}
+
 pub const InitResult= struct
 {
     pub const Error= error{SDL};
@@ -362,10 +389,6 @@ fn setup(opt: InitOptions) InitResult.Error!InitResult
     };
     errdefer{ _=sdl.SDL_GL_DestroyContext(gl_ctx); }
 
-    // On web gl functions are given from emscripten
-    if(PLATFORM==.NATIVE)
-    { _=gl.gladLoadGLLoader(@ptrCast(&sdl.SDL_GL_GetProcAddress)); }
-
     if(!sdl.SDL_GL_SetAttribute (sdl.SDL_GL_CONTEXT_FLAGS, sdl.SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG)
         or
        !sdl.SDL_GL_SetAttribute(sdl.SDL_GL_CONTEXT_PROFILE_MASK, sdl.SDL_GL_CONTEXT_PROFILE_ES))
@@ -378,6 +401,10 @@ fn setup(opt: InitOptions) InitResult.Error!InitResult
         if(sdl.SDL_GL_SetSwapInterval(interval) == false)
         { std.log.err("Failed to set VSync!",.{}); }
     }
+
+    // On web gl functions are given from emscripten
+    if(PLATFORM==.NATIVE)
+    { _=gl.gladLoadGLLoader(@ptrCast(&sdl.SDL_GL_GetProcAddress)); }
 
     @call(.auto, gl.glClearColor, opt.bgColor++.{1.0});
     gl.glViewport(0, 0, opt.width, opt.height);
@@ -508,9 +535,10 @@ fn mainLoop() callconv(.c) void
     else |err|
     { app_status=err; }
 
-    { // when drawing nuklear-ui, switch to gl context setup by nuklear, then switch back
-        const cur_ctx= sdl.SDL_GL_GetCurrentContext().?;
-        defer if(sdl.SDL_GL_MakeCurrent(app_system.?.win, cur_ctx) == false) unreachable;
+    {
+        //TODO: fix it so when drawing nuklear-ui, switch to gl context setup by nuklear, then switch back
+        // const cur_ctx= sdl.SDL_GL_GetCurrentContext().?;
+        // defer if(sdl.SDL_GL_MakeCurrent(app_system.?.win, cur_ctx) == false) unreachable;
 
         // draw nuklear ui
         //* IMPORTANT: `nk_sdl_render` modifies some global OpenGL state
