@@ -22,6 +22,9 @@ One other example included is a nuklear-ui demo
 zig build run-nuklear_demo
 ```
 
+## NOTE
+
+Model importing example (example/import.zig) does not compile with emscripten properly, but everything else builds fine
 
 ## TODO
 
@@ -41,7 +44,7 @@ zig build run-nuklear_demo
 
     * Lighting
 
-    * Model Loading
+    * ~~Model Loading~~
 
 
 

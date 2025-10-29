@@ -264,6 +264,7 @@ const nk= core.nuklear;
 pub fn appIterate(app: *App) anyerror!bool
 {
     const cam= &app.mainCamera;
+
     var travelSpeed: f32=0.0;
     if(app.press_up)
     { travelSpeed= 0.1; }
@@ -275,7 +276,7 @@ pub fn appIterate(app: *App) anyerror!bool
     else if(app.press_right)
     { cam.yawRad+=rad(1.0); }
 
-    cam.addFromDirection(travelSpeed);
+    cam.moveForward(travelSpeed);
     mat_view= cam.calcViewMatrix();
     mat_model= zm.translationV(zm.Vec{ 0.0,0.0,0.0,1.0 });
 
@@ -300,22 +301,24 @@ pub fn appIterate(app: *App) anyerror!bool
 const cos= std.math.cos;
 const sin= std.math.sin;
 
-const FPSCamera= struct
+pub const FPSCamera= struct
 {
     position: zm.Vec,
     front: zm.Vec,
     yawRad: f32,
     pitchRad: f32,
+
+    const Self= @This();
     const up:zm.Vec= .{ 0.0,1.0,0.0,0.0 };
 
-    fn init(x: f32, y:f32, z:f32, yawInDegrees: f32, pitchInDegrees: f32) FPSCamera
+    pub fn init(x: f32, y:f32, z:f32, yawInDegrees: f32, pitchInDegrees: f32) Self
     {
       const yawRad:f32= rad(yawInDegrees);
       const pitchRad:f32= rad(pitchInDegrees);
 
-      return FPSCamera{
+      return .{
         .position= .{ x, y, z, 1.0},
-        .front= FPSCamera.updateDir(yawRad, pitchRad),
+        .front= Self.updateDir(yawRad, pitchRad),
         .yawRad=yawRad, .pitchRad=pitchRad,
       };
     }
@@ -333,7 +336,7 @@ const FPSCamera= struct
     }
 
     ///calculate direction camera is facing and apply that direction as distance
-    fn addFromDirection(cam: *FPSCamera, distance: f32) void
+    pub fn moveForward(cam: *Self, distance: f32) void
     {
       // clamp values of yawRad so that is always within 0-360 degrees
       // use @rem if we want to preserve sign
@@ -341,15 +344,52 @@ const FPSCamera= struct
       // clamp values of pitchRad so that is is always within 180;
       cam.pitchRad= @mod(cam.pitchRad, (3.0*std.math.pi)/2.0);
       const displacement: zm.Vec= @splat(distance);
-      const direction: zm.Vec= FPSCamera.updateDir(cam.yawRad, cam.pitchRad);
+      const direction: zm.Vec= Self.updateDir(cam.yawRad, cam.pitchRad);
 
       cam.front= zm.normalize4 (direction);
       cam.position= zm.mulAdd (cam.front,displacement,cam.position);
     }
 
-    fn calcViewMatrix(cam: *FPSCamera) zm.Mat
+    pub fn calcViewMatrix(cam: Self) zm.Mat
     {
       return zm.lookAtRh
         (cam.position,cam.position+cam.front,up);
+    }
+};
+
+pub const OrbitCamera= struct
+{
+    target: zm.Vec,
+    distance: f32,
+    yawRad: f32,
+    pitchRad: f32,
+
+    const Self= @This();
+    const up:zm.Vec= .{ 0.0,1.0,0.0,0.0 };
+
+    pub fn init(tar_x: f32, tar_y: f32, tar_z: f32, yawInDegrees: f32, pitchInDegrees: f32, dist: f32) Self
+    {
+      const target= zm.Vec{ tar_x, tar_y, tar_z, 0.0 };
+      return .{
+        .target= target,
+        .distance= dist,
+        .yawRad= rad(yawInDegrees),
+        .pitchRad= rad(pitchInDegrees),
+      };
+    }
+
+    pub fn getPosition(cam: *Self) zm.Vec
+    {
+      const diff:zm.Vec= @as(zm.Vec, @splat(cam.distance))-cam.target;
+      cam.yawRad= @mod(cam.yawRad, 2.0*std.math.pi);
+      // clamp values of pitchRad so that is is always within 180;
+      return diff * zm.normalize4
+      (.{ sin(cam.yawRad), sin(cam.pitchRad), cos(cam.yawRad), 0.0 });
+    }
+
+    pub fn calcViewMatrix(cam: *Self) zm.Mat
+    {
+      const position= cam.getPosition();
+      return zm.lookAtRh (position, cam.target, up);
     }
 };

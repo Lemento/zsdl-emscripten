@@ -20,14 +20,17 @@
         .emsdk = .{
             .url = "git+https://github.com/emscripten-core/emsdk.git#f98ae68904e603f0f9fd91e6b50564274e43b843",
             .hash = "N-V-__8AAIPoDwA71xo-fKz78T0BL-y_CD5vqAwmVUU52mHv",
-        }
+        },
+        .zig_assimp = .{
+            .url = "git+https://github.com/Lemento/assimp.git#c79ede1241790a65da5b04dcb039208ee74e43c7",
+            .hash = "zig_assimp-5.3.1--G7jvmu0AACRh6qRn6IY6AIzLFKS92p-XT9XEZP4YXGJ",
+        },
     },
     .paths = .{
         "build.zig",
         "build.zig.zon",
         "src",
-        // For example...
-        //"LICENSE",
-        //"README.md",
+        "glad",
+        "examples",
     },
 }

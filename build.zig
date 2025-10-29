@@ -5,9 +5,9 @@ const requested_browser = "chrome";
 
 const SOURCES =struct
 {
-    pub const demosdl= @import("src/demosdl.zig");
-    pub const demogl= @import("src/demogl.zig");
-    pub const nuklear_demo= @import("src/nuklear_demo.zig");
+    pub const sdl_demo= @import("src/demosdl.zig");
+    pub const opengl_demo= @import("src/demogl.zig");
+    pub const nuklear_demo= @import("src/nuklear.zig");
 };
 
 const EXAMPLES= struct {
@@ -15,6 +15,7 @@ const EXAMPLES= struct {
     pub const transforms= @import("examples/transforms.zig");
     pub const textured= @import("examples/textured.zig");
     pub const camera= @import("examples/camera.zig");
+    pub const import= @import("examples/import3d.zig");
 };
 
 pub fn build(b: *std.Build) void
@@ -36,11 +37,21 @@ pub fn build(b: *std.Build) void
 
 inline fn buildApp(b: *std.Build, dir: []const u8, app_name: []const u8, src: type, opt: anytype) void
 {
-    const src_path= dir++"/"++app_name++".zig";
-    // std.log.debug("building for {s}", .{@typeName(@TypeOf(src))});
+    const src_name= comptime blk:
+    {
+      const name: []const u8= @typeName(src);
+      for(name,0..) |c,i|
+      { if(c == '.'){ break:blk name[i+1..]; }}
+      break:blk name;
+    };
+    const src_path= comptime dir++"/"++src_name++".zig";
+    // std.log.debug("building for {s}", .{@typeName(src)});
 
-    // Let source specify its own build if specified. Otherwise build it as source by default
-    const app_mod =
+    const run_name= "run-"++app_name;
+    const run_step = b.step(run_name, "Run '"++@typeName(src));
+
+    // Let source runs its own build if specified. Otherwise build it as source by default
+    const app_mod=
         if(@hasDecl(src, "build"))
             src.build(b, src_path, opt)
             
@@ -51,15 +62,15 @@ inline fn buildApp(b: *std.Build, dir: []const u8, app_name: []const u8, src: ty
             .link_libc = true,
         });
 
-    const run_name= "run-"++app_name;
-    const run_step = b.step(run_name, "Run '"++app_name++"' program");
-
+    // Build for the Web.
     if (opt.target.result.os.tag == .emscripten) {
-        // Build for the Web.
-        run_step.dependOn (&buildWeb(b, app_name, app_mod, opt).step);
+        run_step.dependOn
+            (&buildWeb(b, src_name, app_mod, opt).step);
 
+    // Build for native machine
     } else {
-        run_step.dependOn (&buildExe(b, app_name, app_mod, opt).step);
+        run_step.dependOn
+            (&buildExe(b, src_name, app_mod, opt).step);
     }
 }
 
@@ -122,7 +133,10 @@ inline fn buildWeb(b: *std.Build, name: []const u8, root_module: *std.Build.Modu
 
         const emcc_cmd=switch(builtin.target.os.tag)
             { .windows=> "emcc.bat", else=> "emcc" };
-        const run_emcc = b.addSystemCommand(&.{b.pathJoin(&.{emsdkPath(b,"upstream/emscripten"), emcc_cmd })});
+        const run_emcc = b.addSystemCommand
+            (&.{b.pathJoin
+              (&.{emsdkPath(b,"upstream/emscripten"), emcc_cmd })
+            });
 
         // Pass 'app_lib' and any static libraries it links with as input files.
         // 'app_lib.getCompileDependencies()' will always return 'app_lib' as the first element.
@@ -132,7 +146,7 @@ inline fn buildWeb(b: *std.Build, name: []const u8, root_module: *std.Build.Modu
             }
         }
 
-        if (opt.target.result.cpu.arch == .wasm64) {
+        if (opt.target.result.cpu.arch == .wasm64){
             run_emcc.addArg("-sMEMORY64");
         }
 
