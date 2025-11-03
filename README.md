@@ -43,10 +43,15 @@ Model importing example (example/import.zig) does not compile with emscripten pr
     * ~~Camera~~
 
     * Model Importing
+
     ** ~~Mesh Loading~~
+
     ** Material Loading
+
     ** Animation Importing and Playback
+
     ** Model Serializing
+    
 
     * Lighting
     ** ~~Basic Lighting~~
