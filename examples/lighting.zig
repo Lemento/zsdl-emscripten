@@ -66,11 +66,12 @@ inline fn mat_mul(matrices: []const zm.Mat) zm.Mat
     return product;
 }
 
+const Camera= @import("camera.zig").OrbitCamera;
 pub const App= struct
 {
     window: core.SetupResult= undefined,
 
-    mainCamera: FPSCamera= .init(0.0,0.0,3.0, -90.0,0.0),
+    mainCamera: Camera= .init(0.0,0.0,0.0, 0.0,0.0,3.0),
     press_up: bool= false,
     press_down: bool= false,
     press_left: bool= false,
@@ -101,7 +102,7 @@ const appSetup= core.SetupOptions
 };
 
 //* GUI */
-fn update_ui(app: *const App) void
+fn update_ui(app: *App) void
 {
     const ctx= app.window.nkx;
     // TODO: Remove static open variable by replacing nk_begin with a function that passes the SourceLocation (@src) of where the function is called
@@ -114,9 +115,10 @@ fn update_ui(app: *const App) void
     if(ui_win.open)
     {
         const cam= &app.mainCamera;
+        const cam_position: zm.Vec= app.mainCamera.getPosition();
 
         nk.nk_layout_row_dynamic(ctx, 22.0, 1);
-        nk.nk_labelf(ctx, nk.NK_TEXT_LEFT, "eyepos: %3.2f, %3.2f, %3.2f", cam.position[0], cam.position[1], cam.position[2]);
+        nk.nk_labelf(ctx, nk.NK_TEXT_LEFT, "eyepos: %3.2f, %3.2f, %3.2f", cam_position[0], cam_position[1], cam_position[2]);
         nk.nk_labelf(ctx, nk.NK_TEXT_LEFT, "viewangle: %3.2f, %3.2f", deg(cam.yawRad), deg(cam.pitchRad));
     }
     nk.nk_end(ctx);
@@ -135,16 +137,16 @@ pub fn appInit(app: *App, system: core.SetupResult) anyerror!void
 
     const GL_VERSION= "#version 300 es\n";
     const vertex_shader_source = [_][*:0]const u8
-    { GL_VERSION, @embedFile("camera.vs"), };
+    { GL_VERSION, @embedFile("lighting.vs"), };
 
     const fragment_shader_source = [_][*:0]const u8
-    { GL_VERSION, @embedFile("texture.fs"), };
+    { GL_VERSION, @embedFile("lighting.fs"), };
 
     app.shader_program = try app.glPool.genShader(&vertex_shader_source, &fragment_shader_source);
 
     app.shader_program.use();
-    gl.glUniform1i(app.shader_program.getUniformLocation("diffuse"), 0);
 
+    gl.glUniformMatrix4fv(app.shader_program.getUniformLocation("u_Model"), 1, gl.GL_TRUE, &zm.identity()[0][0]);
     app.shader_mvp= app.shader_program.getUniformLocation("u_MVP");
     // Reminder that opengl uses column-major matrices while
     // zmath matrices are row-major, so in order for the math to stay 
@@ -157,66 +159,66 @@ pub fn appInit(app: *App, system: core.SetupResult) anyerror!void
     // cube vertices
     const vCube= [_]f32
     { // cube
-    // positions
-        -0.5, -0.5, -0.5,  0.0, 0.0,
-         0.5, -0.5, -0.5,  1.0, 0.0,
-         0.5,  0.5, -0.5,  1.0, 1.0,
-         0.5,  0.5, -0.5,  1.0, 1.0,
-        -0.5,  0.5, -0.5,  0.0, 1.0,
-        -0.5, -0.5, -0.5,  0.0, 0.0,
+    // positions           normals
+    -0.5, -0.5, -0.5,  0.0,  0.0, -1.0,
+     0.5, -0.5, -0.5,  0.0,  0.0, -1.0, 
+     0.5,  0.5, -0.5,  0.0,  0.0, -1.0, 
+     0.5,  0.5, -0.5,  0.0,  0.0, -1.0, 
+    -0.5,  0.5, -0.5,  0.0,  0.0, -1.0, 
+    -0.5, -0.5, -0.5,  0.0,  0.0, -1.0, 
 
-        -0.5, -0.5,  0.5,  0.0, 0.0,
-         0.5, -0.5,  0.5,  1.0, 0.0,
-         0.5,  0.5,  0.5,  1.0, 1.0,
-         0.5,  0.5,  0.5,  1.0, 1.0,
-        -0.5,  0.5,  0.5,  0.0, 1.0,
-        -0.5, -0.5,  0.5,  0.0, 0.0,
+    -0.5, -0.5,  0.5,  0.0,  0.0, 1.0,
+     0.5, -0.5,  0.5,  0.0,  0.0, 1.0,
+     0.5,  0.5,  0.5,  0.0,  0.0, 1.0,
+     0.5,  0.5,  0.5,  0.0,  0.0, 1.0,
+    -0.5,  0.5,  0.5,  0.0,  0.0, 1.0,
+    -0.5, -0.5,  0.5,  0.0,  0.0, 1.0,
 
-        -0.5,  0.5,  0.5,  1.0, 0.0,
-        -0.5,  0.5, -0.5,  1.0, 1.0,
-        -0.5, -0.5, -0.5,  0.0, 1.0,
-        -0.5, -0.5, -0.5,  0.0, 1.0,
-        -0.5, -0.5,  0.5,  0.0, 0.0,
-        -0.5,  0.5,  0.5,  1.0, 0.0,
+    -0.5,  0.5,  0.5, -1.0,  0.0,  0.0,
+    -0.5,  0.5, -0.5, -1.0,  0.0,  0.0,
+    -0.5, -0.5, -0.5, -1.0,  0.0,  0.0,
+    -0.5, -0.5, -0.5, -1.0,  0.0,  0.0,
+    -0.5, -0.5,  0.5, -1.0,  0.0,  0.0,
+    -0.5,  0.5,  0.5, -1.0,  0.0,  0.0,
 
-         0.5,  0.5,  0.5,  1.0, 0.0,
-         0.5,  0.5, -0.5,  1.0, 1.0,
-         0.5, -0.5, -0.5,  0.0, 1.0,
-         0.5, -0.5, -0.5,  0.0, 1.0,
-         0.5, -0.5,  0.5,  0.0, 0.0,
-         0.5,  0.5,  0.5,  1.0, 0.0,
+     0.5,  0.5,  0.5,  1.0,  0.0,  0.0,
+     0.5,  0.5, -0.5,  1.0,  0.0,  0.0,
+     0.5, -0.5, -0.5,  1.0,  0.0,  0.0,
+     0.5, -0.5, -0.5,  1.0,  0.0,  0.0,
+     0.5, -0.5,  0.5,  1.0,  0.0,  0.0,
+     0.5,  0.5,  0.5,  1.0,  0.0,  0.0,
 
-        -0.5, -0.5, -0.5,  0.0, 1.0,
-         0.5, -0.5, -0.5,  1.0, 1.0,
-         0.5, -0.5,  0.5,  1.0, 0.0,
-         0.5, -0.5,  0.5,  1.0, 0.0,
-        -0.5, -0.5,  0.5,  0.0, 0.0,
-        -0.5, -0.5, -0.5,  0.0, 1.0,
+    -0.5, -0.5, -0.5,  0.0, -1.0,  0.0,
+     0.5, -0.5, -0.5,  0.0, -1.0,  0.0,
+     0.5, -0.5,  0.5,  0.0, -1.0,  0.0,
+     0.5, -0.5,  0.5,  0.0, -1.0,  0.0,
+    -0.5, -0.5,  0.5,  0.0, -1.0,  0.0,
+    -0.5, -0.5, -0.5,  0.0, -1.0,  0.0,
 
-        -0.5,  0.5, -0.5,  0.0, 1.0,
-         0.5,  0.5, -0.5,  1.0, 1.0,
-         0.5,  0.5,  0.5,  1.0, 0.0,
-         0.5,  0.5,  0.5,  1.0, 0.0,
-        -0.5,  0.5,  0.5,  0.0, 0.0,
-        -0.5,  0.5, -0.5,  0.0, 1.0,
+    -0.5,  0.5, -0.5,  0.0,  1.0,  0.0,
+     0.5,  0.5, -0.5,  0.0,  1.0,  0.0,
+     0.5,  0.5,  0.5,  0.0,  1.0,  0.0,
+     0.5,  0.5,  0.5,  0.0,  1.0,  0.0,
+    -0.5,  0.5,  0.5,  0.0,  1.0,  0.0,
+    -0.5,  0.5, -0.5,  0.0,  1.0,  0.0
     };
-    const mCube= Mesh.create(.Textured, &vCube, &.{});
+    const mCube= Mesh.create(.PosAndColor, &vCube, &.{});
     app.cube= try Mesh.createObject(mCube, &app.glPool);
 
     // set current working directory
-    if (PLATFORM==.WEB) {
-        const dir = try std.fs.cwd().openDir("/wasm_data", .{});
-        if (@import("builtin").os.tag == .emscripten) {
-            try dir.setAsCwd();
-        } else if (@import("builtin").os.tag == .wasi) {
-            @panic("setting the default current working directory in wasi requires overriding defaultWasiCwd()");
-        }
-    } else {
-        const dir = try std.fs.cwd().openDir("assets", .{});
-        try dir.setAsCwd();
-    }
+    // if (PLATFORM==.WEB) {
+    //     const dir = try std.fs.cwd().openDir("/wasm_data", .{});
+    //     if (@import("builtin").os.tag == .emscripten) {
+    //         try dir.setAsCwd();
+    //     } else if (@import("builtin").os.tag == .wasi) {
+    //         @panic("setting the default current working directory in wasi requires overriding defaultWasiCwd()");
+    //     }
+    // } else {
+    //     const dir = try std.fs.cwd().openDir("assets", .{});
+    //     try dir.setAsCwd();
+    // }
 
-    app.texID= try core.loadImage(&app.glPool, "container.jpg");
+    // app.texID= try core.loadImage(&app.glPool, "container2.png");
 
     try app.window.show();
 }
@@ -264,19 +266,22 @@ const nk= core.nuklear;
 pub fn appIterate(app: *App) anyerror!bool
 {
     const cam= &app.mainCamera;
-
-    var travelSpeed: f32=0.0;
     if(app.press_up)
-    { travelSpeed= 0.1; }
+    {
+        if(cam.pitchRad+rad(3.0) < std.math.pi/2.0)
+          cam.pitchRad+= rad(3.0);
+    }
     else if(app.press_down)
-    { travelSpeed=-0.1; }
+    {
+        if(cam.pitchRad-rad(3.0) > -std.math.pi/2.0)
+          cam.pitchRad-= rad(3.0);
+    }
 
     if(app.press_left)
-    { cam.yawRad-=rad(1.0); }
+    { cam.yawRad-=rad(3.0); }
     else if(app.press_right)
-    { cam.yawRad+=rad(1.0); }
+    { cam.yawRad+=rad(3.0); }
 
-    cam.moveForward(travelSpeed);
     mat_view= cam.calcViewMatrix();
     mat_model= zm.translationV(zm.Vec{ 0.0,0.0,0.0,1.0 });
 
@@ -290,107 +295,10 @@ pub fn appIterate(app: *App) anyerror!bool
     gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 
     app.shader_program.use();
-    gl.glActiveTexture(gl.GL_TEXTURE0);
-    gl.glBindTexture(gl.GL_TEXTURE_2D, app.texID);
+    //gl.glActiveTexture(gl.GL_TEXTURE0);
+    //gl.glBindTexture(gl.GL_TEXTURE_2D, app.texID);
     gl.glUniformMatrix4fv(app.shader_mvp, 1, gl.GL_TRUE, &mat_mvp[0][0]);
     app.cube.draw();
 
     return true;
 }
-
-const cos= std.math.cos;
-const sin= std.math.sin;
-
-pub const FPSCamera= struct
-{
-    position: zm.Vec,
-    front: zm.Vec,
-    yawRad: f32,
-    pitchRad: f32,
-
-    const Self= @This();
-    const up:zm.Vec= .{ 0.0,1.0,0.0,0.0 };
-
-    pub fn init(x: f32, y:f32, z:f32, yawInDegrees: f32, pitchInDegrees: f32) Self
-    {
-      const yawRad:f32= rad(yawInDegrees);
-      const pitchRad:f32= rad(pitchInDegrees);
-
-      return .{
-        .position= .{ x, y, z, 1.0},
-        .front= Self.updateDir(yawRad, pitchRad),
-        .yawRad=yawRad, .pitchRad=pitchRad,
-      };
-    }
-
-    fn updateDir(yawRad: f32, pitchRad: f32) zm.Vec
-    {
-      const dir= zm.Vec
-      {
-        cos(yawRad) * cos(pitchRad),
-        sin(pitchRad),
-        sin(yawRad) * cos(pitchRad),
-        0.0,
-      };
-      return dir;
-    }
-
-    ///calculate direction camera is facing and apply that direction as distance
-    pub fn moveForward(cam: *Self, distance: f32) void
-    {
-      // clamp values of yawRad so that is always within 0-360 degrees
-      // use @rem if we want to preserve sign
-      cam.yawRad= @mod(cam.yawRad, 2.0*std.math.pi);
-      
-      // clamp values of pitchRad so that is is always within 180;
-      cam.pitchRad= @mod(cam.pitchRad, std.math.pi);
-      const displacement: zm.Vec= @splat(distance);
-      const direction: zm.Vec= Self.updateDir(cam.yawRad, cam.pitchRad);
-
-      cam.front= zm.normalize4 (direction);
-      cam.position= zm.mulAdd (cam.front,displacement,cam.position);
-    }
-
-    pub fn calcViewMatrix(cam: Self) zm.Mat
-    {
-      return zm.lookAtRh
-        (cam.position,cam.position+cam.front,up);
-    }
-};
-
-pub const OrbitCamera= struct
-{
-    target: zm.Vec,
-    distance: f32,
-    yawRad: f32,
-    pitchRad: f32,
-
-    const Self= @This();
-    const up:zm.Vec= .{ 0.0,1.0,0.0,0.0 };
-
-    pub fn init(tar_x: f32, tar_y: f32, tar_z: f32, yawInDegrees: f32, pitchInDegrees: f32, dist: f32) Self
-    {
-      const target= zm.Vec{ tar_x, tar_y, tar_z, 0.0 };
-      return .{
-        .target= target,
-        .distance= dist,
-        .yawRad= rad(yawInDegrees),
-        .pitchRad= rad(pitchInDegrees),
-      };
-    }
-
-    pub fn getPosition(cam: *Self) zm.Vec
-    {
-      const diff:zm.Vec= @as(zm.Vec, @splat(cam.distance))-cam.target;
-      cam.yawRad= @mod(cam.yawRad, 2.0*std.math.pi);
-      
-      return diff * zm.normalize4
-      (.{ sin(cam.yawRad), sin(cam.pitchRad), cos(cam.yawRad), 0.0 });
-    }
-
-    pub fn calcViewMatrix(cam: *Self) zm.Mat
-    {
-      const position= cam.getPosition();
-      return zm.lookAtRh (position, cam.target, up);
-    }
-};

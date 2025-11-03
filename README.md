@@ -32,7 +32,7 @@ Model importing example (example/import.zig) does not compile with emscripten pr
 
 *	~~Create more samples for 3D graphics and move all of them to their own directory.~~
 
-*   Continue through LearnOpenGL tutorial for examples
+*   Continue through [LearnOpenGL](https://learnopengl.com/) tutorial for examples
 
     * ~~Hello Triangle~~
 
@@ -42,9 +42,24 @@ Model importing example (example/import.zig) does not compile with emscripten pr
 
     * ~~Camera~~
 
-    * Lighting
+    * Model Importing
+    ** ~~Mesh Loading~~
+    ** Material Loading
+    ** Animation Importing and Playback
+    ** Model Serializing
 
-    * ~~Model Loading~~
+    * Lighting
+    ** ~~Basic Lighting~~
+    ** Materials
+    ** Lighting Maps
+    ** Light Casters
+    ** Multiple Lights
+
+    * Compute Shaders
+
+    * Physics
+
+    * Game Logic/Scripting
 
 
 
