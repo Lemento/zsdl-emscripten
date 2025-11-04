@@ -44,26 +44,26 @@ Model importing example (example/import.zig) does not compile with emscripten pr
 
     * Model Importing
 
-    ** ~~Mesh Loading~~
+        * ~~Mesh Loading~~
 
-    ** Material Loading
+        * Material Loading
 
-    ** Animation Importing and Playback
+        * Animation Importing and Playback
 
-    ** Model Serializing
+        * Model Serializing
 
 
     * Lighting
 
-    ** ~~Basic Lighting~~
+        * ~~Basic Lighting~~
 
-    ** Materials
+        * Materials
 
-    ** Lighting Maps
+        * Lighting Maps
 
-    ** Light Casters
-    
-    ** Multiple Lights
+        * Light Casters
+
+        * Multiple Lights
 
     * Compute Shaders
 
